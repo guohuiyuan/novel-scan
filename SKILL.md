@@ -1,0 +1,76 @@
+---
+name: novel-scan
+description: |
+  长篇轻小说扫书流水线（agent 自扫主路径）：分卷派子代理直接读原文、边读边记，逐人物汇总成两件套产物——
+  ①人物数据 JSON + 可视化 HTML（角色卡片：身份/别名/纯洁度四维判定/雷点/郁闷点，全部原文核验）；
+  ②情节速览报告（分卷梗概+人物速览+雷点/郁闷点汇总+排雷结论）。
+  雷点/郁闷点判定遵循 novel-digest rules.json 分类学（见 references/leidian-taxonomy.md），禁止泛化为"读起来难受的情节"。
+  触发词：扫书、跑一本小说、小说排雷、人物可视化、情节速览。
+---
+
+# novel-scan：agent 自扫流水线
+
+核心原则：**线索 ≠ 事实**。子代理只写自己读到/核对过的内容，幻觉在读取时被杜绝。**成品正文不写行号**（阅读界面无法跳转），用 ≤50 字原文引文定位；行号只进笔记与清洗记录。
+
+## 路径选择
+
+- **主路径（默认）：agent 自扫**。子代理直接 Read/Grep 原文。
+- **可选加速：novel-digest 产物只当侦察线索**（漏女补漏、雷点候选），每条必须 grep 原文核实。位置 `C:\Users\guohuiyuan\code\aiwork\novelwork\novel-digest\`。
+
+## 雷点/郁闷点判定标准（唯一口径）
+
+见 `references/leidian-taxonomy.md`（源自 novel-digest rules.json）：
+- **雷点 6 类**：绿帽/死女/送女/背叛/万人骑/龟作——男性向网文语境的弃书级毒点。
+- **郁闷点 26 类**：非处/亵女/漏女/拒女/惧女/虐主/百合/虐心/nc/拉皮条/接盘/神雕……
+- **术语**：初（精神初/肉体初）、处。
+- 记录格式：`[雷点|郁闷点] 类别名：一句事实（引文「…」≤50字）`。不硬塞类别，宁可"未归类"。
+- 纯洁度四维：**处/精神初/初婚/初摸**，证据不足记"未知"+缺什么证据，**禁止默认全初**。
+
+## 主路径四阶段
+
+### A. 侦察（主代理）
+1. 行数、卷标题模式 → **卷级行号区间表**（注意"第6.5卷"这类带"第"字的变体）。
+2. 人物候选 grep 频次（同学/学姊前后缀、候选名计数）。
+
+### B. 分卷扫描（子代理并行，每卷一个）
+- 按 `references/subagent-prompt.md` 模板一派子代理（2-4 并行），分段 Read 读完本卷，边读边记（行号进笔记）；
+- 雷点/郁闷点**必须按分类学打标**；缺文标题标注跳过，禁止补写；
+- 产出 `<输出目录>/scan_notes/卷NN.md`。
+
+### C. 逐人物汇总（子代理，每人一个）
+- 主代理归并各卷笔记人物线 → 按模板二派子代理；
+- 每个子代理产出：**人物 JSON 片段**（schema 见模板二）+ 原始笔记备查；
+- SPLIT-PAIR 检查：别名重叠+剧情互斥的并成一人；疑似碎片逐一 grep 裁定。
+
+### D. 组装交付（主代理，两件套）
+1. **人物数据 JSON**：合并各角色片段为 `<书名>_人物数据.json`——顶层 `book/generated_at/source/male_protagonist/characters[]/book_leidian_summary[]/book_yumen_summary[]`；全书级汇总从角色条目聚合去重。
+2. **人物卡 Markdown**：`python <skill>/scripts/render_characters_md.py --json <人物数据.json> --out <书名>_人物卡.md`。展示规则（用户实测反馈固化）：**不显示剔除别名**（只显示 aliases_verified）、**全文不出现行号**（渲染时自动剥离 L\d+ 及含行号的括号注记）、**置信度只显示等级**（高/中高/中/低，长说明留在 JSON 原文件里不进卡片）。
+3. **情节速览报告**：`<书名>_情节速览报告.md`——一句话简介与题材标签、分卷剧情梗概表（卷|主线事件|感情进度）、男主速览、各角色速览（每人 3-5 行）、雷点汇总表（类别|涉及角色|事实+引文）、郁闷点汇总表、排雷结论（适合/避雷什么读者）。**全部事实与 JSON 同源**，从验证过的材料转写，不新增未核验内容。
+4. 审计：幻觉实体残留 grep、引文抽查（抽 8+ 条回原文 grep，未命中的区分"省略号拼接"与"加引号的概括"，后者去引号改转述）、行号残留检查（正文应为 0）。
+5. present_files 交付 JSON + HTML + 报告。
+
+## 人物 JSON schema（v1）
+
+```jsonc
+{
+  "book": "书名", "generated_at": "YYYY-MM-DD HH:MM", "source": "novels/xxx.txt",
+  "male_protagonist": {"name":"", "aliases":[], "identity":"", "personality":"", "arc":""},
+  "characters": [{
+    "name":"", "aliases_verified":[], "aliases_rejected":[{"alias":"","reason":""}],
+    "importance_rank":1, "identity":"", "appearance":"", "personality":"",
+    "relationship_to_mc":"",
+    "purity": {"chu":"处|非处|未知","jingshen_chu":"精神初|非初|未知","hunyin":"初婚|有婚史婚约|未知","chumo":"初摸|被非男主触碰|未知",
+               "verdict":"全初|部分初|非初|未知", "evidence":["引文…"]},
+    "leidian": [{"category":"绿帽|死女|送女|背叛|万人骑|龟作","evidence":"","quote":""}],
+    "yumen":   [{"category":"郁闷点26类之一","evidence":"","quote":""}],
+    "key_events": ["…"], "quotes": ["…"], "confidence": "high|medium|low"
+  }],
+  "book_leidian_summary": [{"category":"","evidence":"","quote":""}],
+  "book_yumen_summary": [{"category":"","evidence":"","quote":""}]
+}
+```
+
+## 运行成本参考
+
+- 100 万字 ≈ 13 个分卷子代理 + 8-10 个人物子代理，串行约 1-2 小时，全程只读本地文件。
+- 不要重跑已验证过的阶段：笔记→人物→组装均可断点复用。
