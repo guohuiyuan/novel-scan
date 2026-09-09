@@ -4,7 +4,7 @@ description: |
   长篇轻小说扫书流水线（agent 自扫主路径）：分卷派子代理直接读原文、边读边记，逐人物汇总成两件套产物——
   ①人物数据 JSON + 可视化 HTML（角色卡片：身份/别名/纯洁度四维判定/雷点/郁闷点，全部原文核验）；
   ②情节速览报告（分卷梗概+人物速览+雷点/郁闷点汇总+排雷结论）。
-  雷点/郁闷点判定遵循 novel-digest rules.json 分类学（见 references/leidian-taxonomy.md），禁止泛化为"读起来难受的情节"。
+  雷点/郁闷点判定使用本 skill 内置分类学（见 references/leidian-taxonomy.md），禁止泛化为"读起来难受的情节"。
   触发词：扫书、跑一本小说、小说排雷、人物可视化、情节速览。
 ---
 
@@ -15,11 +15,11 @@ description: |
 ## 路径选择
 
 - **主路径（默认）：agent 自扫**。子代理直接 Read/Grep 原文。
-- **可选加速：novel-digest 产物只当侦察线索**（漏女补漏、雷点候选），每条必须 grep 原文核实。位置 `C:\Users\guohuiyuan\code\aiwork\novelwork\novel-digest\`。
+- **自包含要求**：不读取、不依赖任何外部项目、抽取流水线或本地路径产物。
 
 ## 雷点/郁闷点判定标准（唯一口径）
 
-见 `references/leidian-taxonomy.md`（源自 novel-digest rules.json）：
+见 `references/leidian-taxonomy.md`：
 - **雷点 6 类**：绿帽/死女/送女/背叛/万人骑/龟作——男性向网文语境的弃书级毒点。
 - **郁闷点 26 类**：非处/亵女/漏女/拒女/惧女/虐主/百合/虐心/nc/拉皮条/接盘/神雕……
 - **术语**：初（精神初/肉体初）、处。
