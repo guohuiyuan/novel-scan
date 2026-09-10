@@ -56,6 +56,36 @@ code{background:#f1f3f6;border-radius:6px;padding:2px 8px;font-size:24px}
 .blk{padding:0}
 """
 
+# 紧凑模式：字号/间距整体缩小约两成，用于内容量大的文档（如多角色人物卡），
+# 单张能多装约 40% 内容，从而把总张数压进贴吧单楼层 20 张以内。
+CSS_DENSE = """
+*{margin:0;padding:0;box-sizing:border-box}
+body{width:750px;background:#fbfbfc;font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:#22252a;-webkit-font-smoothing:antialiased}
+.top{background:linear-gradient(135deg,#2f5af0,#7a3cf0);color:#fff;padding:24px 32px 18px}
+.top .k{font-size:20px;opacity:.85;letter-spacing:2px}
+.top h1{font-size:40px;margin:4px 0 6px}
+.top .sub{font-size:23px;opacity:.95;font-weight:600}
+.body{padding:20px 32px 24px}
+h2{font-size:28px;margin:16px 0 10px;padding-left:14px;border-left:8px solid #2f5af0;line-height:1.3}
+h3{font-size:25px;margin:14px 0 8px;color:#2f5af0}
+h2.red,h3.red{border-color:#c5221f;color:#c5221f}
+h2.amber,h3.amber{border-color:#a56300;color:#a56300}
+h2.green,h3.green{border-color:#137333;color:#137333}
+p,li,td,th{font-size:22px;line-height:1.55}
+ul,ol{padding-left:26px;margin:6px 0}
+li{margin:4px 0}
+strong{color:#111}
+blockquote{background:#f3f4f6;border-left:7px solid #c9cdd4;padding:10px 16px;margin:9px 0;color:#52565c;border-radius:0 10px 10px 0;font-size:21px}
+blockquote p{font-size:21px;margin:3px 0}
+table{width:100%;border-collapse:collapse;margin:9px 0}
+td,th{border:1px solid #e2e4e8;padding:7px 9px;text-align:left;vertical-align:top;font-size:20px;line-height:1.45}
+th{background:#f1f3f6;color:#333}
+.footer{padding:14px 32px 24px;color:#9aa0a6;font-size:19px;text-align:center}
+hr{border:none;border-top:1px dashed #d8dbe0;margin:12px 0}
+code{background:#f1f3f6;border-radius:5px;padding:1px 6px;font-size:20px}
+.blk{padding:0}
+"""
+
 FOOTER = "AI 辅助生成 · 全部事实经原文核验 · novel-scan"
 
 
@@ -227,8 +257,17 @@ def main():
     ap.add_argument("--md", action="append", required=True)
     ap.add_argument("--skip", default="角色卡片")
     ap.add_argument("--max-height", type=int, default=DEFAULT_MAX_H)
+    ap.add_argument("--pack-across", action="store_true",
+                    help="允许不同小节共页（人物卡这类小节多、每节短的场景可大幅压缩张数）")
+    ap.add_argument("--dense", action="store_true",
+                    help="紧凑排版（字号/间距缩小约两成），内容量大时显著减少张数")
+    ap.add_argument("--per-folder", type=int, default=0,
+                    help="每 N 张放一个子目录（贴吧单楼层 20 张上限，超了就分楼发）")
     args = ap.parse_args()
     MAXH = args.max_height
+    if args.dense:
+        global CSS
+        CSS = CSS_DENSE
 
     # ---- 1) 解析章节（把封面块并入第一个章节，省一张图以满足贴吧单楼层 20 张上限）----
     sections, cover = [], None
@@ -284,43 +323,67 @@ def main():
         def pieces_of(title, blk):
             return submap.get((title, blk), [blk])
 
-        # ---- 4) 贪婪装箱（BUDGET 留安全余量：多块叠加时的块间距会略高于单块实测）----
-        BUDGET = MAXH - 40
-        pages = []  # (subtitle, cls, [blocks])
+        # ---- 4) 贪婪装箱 ----
+        # BUDGET 留安全余量：多块叠加的块间距 + 副标题换行，实测会略高于单块高度之和
+        # 实测：多块叠加后真实高度约为预算的 1.14 倍（块间距/换行累积），故留足余量
+        BUDGET = int(MAXH * 0.88)
+        pages = []                       # (subtitle, cls, [blocks])
+        cur, cur_h, cur_t, cur_cls = [], 0.0, [], ""
+        seen = {}                        # 小节名 -> 已出页数（用于「（续N）」）
+
+        def flush():
+            nonlocal cur, cur_h, cur_t, cur_cls
+            if not cur:
+                return
+            ts = list(dict.fromkeys(cur_t))
+            if len(ts) == 1:
+                n = seen.get(ts[0], 0)
+                sub = ts[0] if n == 0 else f"{ts[0]}（续{n}）"
+            elif len(ts) == 2:
+                sub = " ／ ".join(ts)
+            else:
+                sub = f"{ts[0]} ／ {ts[1]} 等{len(ts)}节"
+            for t in ts:
+                seen[t] = seen.get(t, 0) + 1
+            pages.append((sub, cur_cls, cur))
+            cur, cur_h, cur_t, cur_cls = [], 0.0, [], ""
+
         for title, cls, blocks in sections:
-            ch = chrome[title]
-            cur, cur_h, part = [], ch, 0
-
-            def flush():
-                nonlocal cur, cur_h, part
-                if cur:
-                    pages.append((title + ("" if part == 0 else f"（续{part}）"), cls, cur))
-                    part += 1
-                    cur, cur_h = [], ch
-
             for blk in blocks:
                 bh = blkh[(title, blk)]
-                if cur and cur_h + bh > BUDGET:
+                if not cur:
+                    cur_h, cur_cls = chrome[title], cls
+                # 默认：换小节就翻页；--pack-across：允许不同小节共页（内容多时大幅压张数）
+                over = (cur_h + bh > BUDGET) if args.pack_across else \
+                       ((bool(cur_t) and title not in cur_t) or (cur_h + bh > BUDGET))
+                if cur and over:
                     flush()
-                if cur_h + bh > BUDGET:        # 单块仍超高 → 用预拆好的子块
+                    cur_h, cur_cls = chrome[title], cls
+                if cur_h + bh > BUDGET:      # 单块仍超高 → 用预拆好的子块
                     subs = pieces_of(title, blk)
                     if len(subs) > 1:
                         for s in subs:
                             sbh = blkh.get((title, s), bh)
                             if cur and cur_h + sbh > BUDGET:
                                 flush()
-                            cur.append(s); cur_h += sbh
+                                cur_h, cur_cls = chrome[title], cls
+                            cur.append(s); cur_h += sbh; cur_t.append(title)
                         continue
-                cur.append(blk); cur_h += bh
-            flush()
+                cur.append(blk); cur_h += bh; cur_t.append(title)
+        flush()
 
-        # ---- 5) 出图 ----
+        # ---- 5) 出图（--per-folder N：每 N 张一个子目录，对应贴吧单楼层 20 张上限）----
         total = len(pages)
         os.makedirs(args.out, exist_ok=True)
         os.makedirs(os.path.join(args.out, "_html"), exist_ok=True)
         outs = []
         for i, (sub, cls, blocks) in enumerate(pages, 1):
-            dst = os.path.join(args.out, f"{args.book}扫书_{i:02d}.png")
+            folder = args.out
+            if args.per_folder:
+                layer = (i - 1) // args.per_folder + 1
+                folder = os.path.join(args.out, f"第{layer}楼")
+                os.makedirs(folder, exist_ok=True)
+            dst = os.path.join(folder, f"{args.book}扫书_{i:02d}.png")
             render_page(pg, args.book, sub, blocks, cls, i, total, dst)
             outs.append(dst)
         b.close()
