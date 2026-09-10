@@ -34,6 +34,7 @@ scripts/
   render_characters_md.py     # JSON → 人物卡 Markdown（无行号版）
   render_characters_html.py   # JSON → 可视化 HTML（备用）
   merge_sections.py           # 章节合并 + 目录锚点
+  render_tieba_cards.py       # md 原格式 → 贴吧手机端连图
 ```
 
 ## 安装（WorkBuddy / Claude Code 类 Agent）
