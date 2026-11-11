@@ -53,7 +53,8 @@ def render(data):
     n_lei = sum(len(c.get("leidian", [])) for c in chars)
     n_yu = sum(len(c.get("yumen", [])) for c in chars)
     out.append(f"> 来源：{data.get('source','')} ｜ 生成：{data.get('generated_at','')} ｜ "
-               f"{len(chars)} 角色 ｜ 雷点 {n_lei} 条 ｜ 郁闷点 {n_yu} 条 ｜ 全部事实经原文核验")
+               f"{len(chars)} 角色 ｜ 雷点 {n_lei} 条 ｜ 郁闷点 {n_yu} 条 ｜ "
+               f"{data.get('verify_note') or '全部事实经原文核验'}")
     out.append("")
 
     male = data.get("male_protagonist", {})

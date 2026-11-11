@@ -42,30 +42,45 @@ def main():
     ap.add_argument("--probe", nargs="*", default=[], help="幻觉实体探针词（其他书角色名等）")
     a = ap.parse_args()
 
-    main_txt = open(a.novel, encoding="utf-8").read()
-    M = norm(main_txt)
+    if a.novel and os.path.exists(a.novel):
+        main_txt = open(a.novel, encoding="utf-8").read()
+    else:
+        main_txt = None
+        print(f"!! 原文不可用（{a.novel}）：跳过引文逐字核验，仅查行号残留与幻觉实体")
+    M = norm(main_txt) if main_txt else ""
     data = json.load(open(a.json, encoding="utf-8"))
 
     def hit(q):
+        if not M:
+            return None
         fr = split_frags(q)
         return any(f in M for f in fr) if fr else norm(q) in M
 
     # ---- 1) quotes[] 逐字核验 ----
     tot = bad = 0
     print("== 1. quotes[] 引文逐字核验 ==")
+    if not M:
+        print("   [SKIP] 原文缺失，本轮无法核验")
     for c in data.get("characters", []):
         for q in (c.get("quotes") or []):
+            r = hit(q)
+            if r is None:
+                continue
             tot += 1
-            if not hit(q):
+            if not r:
                 bad += 1
                 print(f"   [未命中] [{c.get('name')}] {q[:70]}")
     mp = data.get("male_protagonist") or {}
     for q in (mp.get("quotes") or []):
+        r = hit(q)
+        if r is None:
+            continue
         tot += 1
-        if not hit(q):
+        if not r:
             bad += 1
             print(f"   [未命中] [男主] {q[:70]}")
-    print(f"   结果: {tot - bad}/{tot} 命中" + ("  ✅" if bad == 0 else "  ⚠️ 需处理"))
+    if tot:
+        print(f"   结果: {tot - bad}/{tot} 命中" + ("  ✅" if bad == 0 else "  ⚠️ 需处理"))
 
     # ---- 2) 元数据里的「」标签（人工抽查用）----
     spans = []
@@ -104,8 +119,17 @@ def main():
     # ---- 4) 幻觉实体探针 ----
     if a.probe:
         print("\n== 4. 幻觉实体探针 ==")
-        for kw in a.probe:
-            print(f"   「{kw}」在原文出现 {main_txt.count(kw)} 次")
+        if not main_txt:
+            print("   [SKIP] 原文缺失，改为在各卷笔记中检索")
+            notes_dir = os.path.join(os.path.dirname(os.path.abspath(a.json)), "..", "scan_notes")
+            corpus = ""
+            for f in sorted(glob.glob(os.path.join(notes_dir, "*.md"))):
+                corpus += open(f, encoding="utf-8").read()
+            for kw in a.probe:
+                print(f"   「{kw}」在笔记中出现 {corpus.count(kw)} 次")
+        else:
+            for kw in a.probe:
+                print(f"   「{kw}」在原文出现 {main_txt.count(kw)} 次")
 
     print("\n审计完成。" + ("全部通过。" if bad == 0 else "请处理上面标 ⚠️ 的项。"))
     return 0 if bad == 0 else 1
