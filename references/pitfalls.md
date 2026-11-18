@@ -71,6 +71,11 @@
 - 源文件里明明是 `1. 曾倩` `2. 关敏晴`…，预览里全变 `1.`：因为列表项之间夹着空行和 `![图](...)` 段落，markdown 渲染器把每个 `N.` 判成**新列表**，各自从 1 开始。
 - 修法：序号写进标题文本 `### N. 名字`，不依赖列表语法。`render_bookreview_md.py` 已改。
 
+## 示例 README 放错层级 → GitHub 上图片全 404（2026-11-18）
+- 把导读写成 `examples/README.md`，内容却按 `examples/都市良人行/` 的视角引用 `人物图/01_曾倩.webp`，GitHub 解析成 `examples/人物图/01_曾倩.webp`——本地 IDE 预览正常（有些渲染器会猜），线上点开就是 404。
+- 规矩：**导读跟在产物同一目录**（`examples/<书名>/README.md`），相对路径才有意义；`examples/README.md` 只做索引，链接写 `都市良人行/README.md`。
+- 兜底：`python scripts/check_links.py --root .`，把所有 md 的相对链接按各自目录解析一遍，缺失即以非零退出。
+
 ## 重出图之后必须重渲染文档
 - 图片文件名带 `importance_rank`（`04_曾柔.webp`）。补了 7 位女主后 rank 全部重排、旧图删掉重出，**书评里还留着 `人物图/01_曾柔.webp` 这种旧链接**，打开就是裂图。
 - 顺序固定：`assemble_json` → `gen_portraits` → **再** `render_bookreview_md` / `render_characters_md`。图先出、文档后渲染，链接才会指向真实文件名。

@@ -63,9 +63,11 @@ scripts/
   pick_cover.py                # 书评封面：公开图库随机 roll 一张 SFW 图（免 key）
   merge_sections.py           # 章节合并 + 目录锚点
   make_example.py             # 把一次输出做成 examples/<书名> 展示副本（人物图降采样）
+  check_links.py              # 校验 md 里的相对链接/图片是否指得实（挪目录、改名后必跑）
   audit_deliverables.py       # 交付前自检：引文逐字/外貌/名场面/书级字段/行号残留
 examples/
   都市良人行/                  # 完整效果示例（书评 + 人物卡 + JSON + 封面 + 12 张人物图）
+    README.md                 # 该次输出的导读（产物清单、审计结论、如何复现）
 ```
 
 ## 安装（WorkBuddy / Claude Code 类 Agent）
