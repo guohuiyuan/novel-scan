@@ -4,8 +4,12 @@
 novel-scan: render_bookreview_md.py —— 按「清风扫书」体例渲染整篇扫书稿
 
 结构（对标公众号扫书帖，顺序固定）：
-  书名/作者/字数 → 题材/状态/平台 → 8 维评分 → 简介 → 男主 → 女主逐条
-  → 其他角色 → 分维度点评（剧情/女主/车技/设定/缺点）→ 排雷 → 数据说明
+  书名/作者/字数 → 题材/状态/平台 → 8 维评分 → 简介 → 雷点与郁闷点概况 → 男主
+  → 女主逐条（每条内含该角色的雷点/郁闷点明细）→ 其他角色 → 分维度点评 → 数据说明
+
+雷点为什么拆两处：概况放在简介后、男主前，是给读者的「接受度闸门」——先知道这本书踩了
+哪些线再决定读不读；明细放进各自角色条目，是因为一条雷点离开人物就说不清（谁对谁做了什么）。
+早年明细只在文末汇总，全是「她随身带着电话……」这种代词，读者判断不了是谁。
 
 与 render_characters_md.py 的分工：
   - 这个脚本产出「能直接发出去的扫书稿」（<书名>_书评.md）；
@@ -20,6 +24,10 @@ import argparse
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from textfmt import named_evidence  # noqa: E402
 
 GRADE_ORDER = ["情节", "文笔", "感情", "车速", "人物刻画", "新意", "压抑度", "总评"]
 DIM_ORDER = ["剧情方面", "女主方面", "车技方面", "设定方面", "缺点方面"]
@@ -208,6 +216,71 @@ def emit_paras(out, text, label=None, target=170, hard=260):
     return out
 
 
+def leiyu_items(data):
+    """取「雷点 / 郁闷点」，每条都带 name。
+
+    优先用 assemble_json 汇总的书级列表（它已写入 name 并把开头代词换成角色名）；
+    老数据/手工拼的 JSON 没有 name 时，现场从 characters 里聚合兜底。
+    """
+    def take(book_key, char_key):
+        items = [i for i in (data.get(book_key) or []) if isinstance(i, dict)]
+        if items and any(clean(i.get("name")) for i in items):
+            return [{"name": clean(i.get("name")) or "—",
+                     "category": clean(i.get("category")) or "未归类",
+                     "evidence": clean(i.get("evidence")),
+                     "quote": clean(i.get("quote"))} for i in items]
+        out = []
+        for c in data.get("characters") or []:
+            nm = clean(c.get("name"))
+            for i in (c.get(char_key) or []):
+                if isinstance(i, dict):
+                    out.append({"name": nm, "category": clean(i.get("category")) or "未归类",
+                                "evidence": clean(named_evidence(i.get("evidence"), nm)),
+                                "quote": clean(i.get("quote"))})
+        return out
+    return take("book_leidian_summary", "leidian"), take("book_yumen_summary", "yumen")
+
+
+def emit_leiyu_overview(out, lei, yu):
+    """简介之后的「开读前先看」：只做索引，逐条细节留在各角色条目里。"""
+    if not (lei or yu):
+        return
+    out += ["## 雷点与郁闷点（开读前先看）", ""]
+    bits = []
+    if lei:
+        bits.append(f"**{len(lei)} 处雷点**")
+    if yu:
+        bits.append(f"**{len(yu)} 处郁闷点**")
+    out.append("> 全书 " + "、".join(bits) + "。"
+               "雷点＝容易直接弃书的踩线项（背叛、绿帽、神雕、死女、漏女一类）；"
+               "郁闷点＝膈应但未必弃书（拒女、虐心、擦边、百合、拉皮条、虐主一类）。"
+               "**按自己的接受度决定要不要读**——下面只列索引，具体情节与原文引文见各角色条目。")
+    out.append("")
+    if lei:
+        out += ["**雷点**", ""]
+        for it in lei:
+            out.append(f"- **{it['name']} · {it['category']}**：{it['evidence']}")
+        out.append("")
+    if yu:
+        order, bucket = [], {}
+        for it in yu:
+            k = it["category"]
+            if k not in bucket:
+                bucket[k] = []
+                order.append(k)
+            bucket[k].append(it["name"])
+        order.sort(key=lambda k: (-len(bucket[k]), k))
+        out += ["**郁闷点分布**", "",
+                "| 类别 | 次数 | 涉及角色 |", "|:---|:--:|:---|"]
+        for k in order:
+            counts = {}
+            for n in bucket[k]:
+                counts[n] = counts.get(n, 0) + 1
+            who = "、".join(f"{n}（{c} 次）" if c > 1 else n for n, c in counts.items())
+            out.append(f"| **{cell(k)}** | {len(bucket[k])} | {cell(who)} |")
+        out.append("")
+
+
 def render(data, img_dir=None, images=True, cover=""):
     bm = data.get("book_meta") or {}
     book = bm.get("title") or data.get("book", "")
@@ -268,6 +341,10 @@ def render(data, img_dir=None, images=True, cover=""):
         for p in blurb:
             for seg in split_paragraphs(p, target=220, hard=320):
                 out += [seg, ""]
+
+    # ---- 雷点与郁闷点概况（简介之后、男主之前：先让读者判断接受度）----
+    lei_all, yu_all = leiyu_items(data)
+    emit_leiyu_overview(out, lei_all, yu_all)
 
     # ---- 男主 ----
     male = data.get("male_protagonist") or {}
@@ -331,6 +408,19 @@ def render(data, img_dir=None, images=True, cover=""):
                 out += [f"**性格特点**：{'、'.join(clean(t) for t in tags if clean(t))}", ""]
             elif clean(c.get("personality")):
                 out += [f"**性格特点**：{clean(c['personality'])}", ""]
+            # 该角色的雷点/郁闷点明细放在这里：离开人物就说不清「谁对谁做了什么」
+            for label, key in (("雷点", "leidian"), ("郁闷点", "yumen")):
+                items = [it for it in (c.get(key) or []) if isinstance(it, dict)]
+                if not items:
+                    continue
+                out += [f"**{label}**", ""]
+                for it in items:
+                    q = clean(it.get("quote"))
+                    out.append(f"- **{clean(it.get('category')) or '未归类'}**："
+                               f"{clean(named_evidence(it.get('evidence'), c.get('name', '')))}")
+                    if q:
+                        out.append(f"  > 「{q}」")
+                out.append("")
             sl = c.get("signature_line")
             if isinstance(sl, dict) and clean(sl.get("quote", "")):
                 out.append(f"> **名场面**：「{clean(sl['quote'])}」"
@@ -377,23 +467,6 @@ def render(data, img_dir=None, images=True, cover=""):
             out += [f"### {i}. {t}" if t else f"### {i}", ""]
             emit_paras(out, txt, target=220, hard=320)
 
-    # ---- 排雷：类别加粗独立成段，引文降到下一行做视觉证据 ----
-    lei = data.get("book_leidian_summary") or []
-    yu = data.get("book_yumen_summary") or []
-    if lei or yu or data.get("characters"):
-        out += ["## 排雷", ""]
-        for title, items in (("雷点", lei), ("郁闷点", yu)):
-            out += [f"### {title}", ""]
-            if not items:
-                out += ["- 无（逐条核过，未成立）", ""]
-                continue
-            for it in items:
-                q = clean(it.get("quote", ""))
-                out.append(f"- **{clean(it.get('category','未归类'))}**：{clean(it.get('evidence',''))}")
-                if q:
-                    out.append(f"  > 「{q}」")
-            out.append("")
-
     # ---- 数据说明 ----
     out += ["## 数据说明", ""]
     note = []
@@ -402,6 +475,8 @@ def render(data, img_dir=None, images=True, cover=""):
     if data.get("source"):
         note.append(f"原文：{clean(data['source'])}")
     note.append("全部人物事实与引文已回原文逐字核验；引文照抄，不改写、不拼接。")
+    if lei_all or yu_all:
+        note.append("雷点与郁闷点的索引在开头「雷点与郁闷点」一节，逐条情节与引文写在对应角色条目内。")
     if data.get("verify_note"):
         note.append(clean(data["verify_note"]))
     if bm.get("status") == "未知":

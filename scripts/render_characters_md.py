@@ -103,8 +103,10 @@ def render(data, img_dir=None):
         out.append(f"## {title}")
         for it in items:
             q = clean(it.get("quote", ""))
-            out.append(f"- `{it.get('category','')}` {clean(it.get('evidence',''))}"
-                       + (f" 「{q}」" if q else ""))
+            # 必须带角色名：汇总里全是「她……」，读者判断不了是谁（老数据没 name 就留空）
+            who = clean(it.get("name", ""))
+            head = f"`{it.get('category','')}` " + (f"**{who}**：" if who else "")
+            out.append(f"- {head}{clean(it.get('evidence',''))}" + (f" 「{q}」" if q else ""))
         out.append("")
 
     out.append("## 角色卡片")

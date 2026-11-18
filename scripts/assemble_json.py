@@ -23,6 +23,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from textfmt import named_evidence  # noqa: E402
+
 BOOK_KEYS = ("book_meta", "ratings", "blurb", "dimension_reviews",
              "side_characters", "heroine_overview", "coverage")
 
@@ -108,17 +111,23 @@ def _flat(v):
 
 
 def aggregate(chars, key):
+    """把各角色的雷点/郁闷点汇总成书级列表。
+
+    必须带上 `name`：早先只汇总 category/evidence/quote，书评开头的概况就变成 24 条
+    「她随身带着电话……」——读者无法判断是谁，等于没写。同时把开头的人称代词换成角色名。
+    """
     seen, out = set(), []
     for c in chars:
+        nm = c.get("name", "")
         for it in (c.get(key) or []):
             if not isinstance(it, dict):
                 continue
-            ev = _flat(it.get("evidence"))
+            ev = named_evidence(_flat(it.get("evidence")), nm)
             sig = (_flat(it.get("category")), ev[:40])
             if sig in seen:
                 continue
             seen.add(sig)
-            out.append({"category": _flat(it.get("category")), "evidence": ev,
+            out.append({"name": nm, "category": _flat(it.get("category")), "evidence": ev,
                         "quote": _flat(it.get("quote"))})
     return out
 

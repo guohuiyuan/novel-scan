@@ -239,6 +239,59 @@ def main():
     if blank:
         print(f"   [缺失] {'、'.join(blank)} 连一维都没有，只有 verdict；书评会退化成只写「全初」")
 
+    # ---- 2f) 雷点/郁闷点：汇总必须带人名，书评必须「开头有闸门、明细在角色里」----
+    print("\n== 2f. 雷点 / 郁闷点可读性 ==")
+    for key, label_ in (("book_leidian_summary", "雷点"), ("book_yumen_summary", "郁闷点")):
+        items = [i for i in (data.get(key) or []) if isinstance(i, dict)]
+        if not items:
+            continue
+        no_name = [i for i in items if not str(i.get("name") or "").strip()]
+        if no_name:
+            print(f"   [缺失] 书级{label_}汇总有 {len(no_name)}/{len(items)} 条没写 name"
+                  "（概况里会变成「她……」，读者不知道是谁；重跑 assemble_json.py 会补）")
+        pron = [i for i in items
+                if re.match(r"^\s*[她他]\s*[，,、]?", str(i.get("evidence") or ""))]
+        if pron:
+            print(f"   [代词开头] {len(pron)} 条{label_}以「她/他」开头："
+                  + "；".join(str(i.get("evidence"))[:16] for i in pron[:3]))
+        if not no_name and not pron:
+            print(f"   {label_} {len(items)} 条：均带角色名、无代词开头  ✅")
+
+    docs_md = [d for d in (a.docs or []) if os.path.exists(d)]
+    review = next((d for d in docs_md if "书评" in os.path.basename(d)), None)
+    if review:
+        txt = open(review, encoding="utf-8").read()
+        i_intro = txt.find("\n## 简介")
+        i_gate = txt.find("\n## 雷点与郁闷点")
+        i_male = txt.find("\n## 男主")
+        if i_gate == -1:
+            print("   [缺失] 书评没有「雷点与郁闷点（开读前先看）」一节"
+                  "——读者读到第三章才知道踩雷")
+        elif not (i_intro != -1 and i_male != -1 and i_intro < i_gate < i_male):
+            print("   [位置] 雷点概况不在「简介之后、男主之前」")
+        else:
+            print("   书评：雷点概况位于简介之后、男主之前  ✅")
+        if "\n## 排雷" in txt:
+            print("   [重复] 文末仍有「## 排雷」汇总段，与开头概况 + 角色明细三处重复，建议删掉")
+        # 每个角色的雷点/郁闷点要落在它自己的条目区间里
+        heads = [(m.start(), m.group(1)) for m in re.finditer(r"\n### (?:#?\d+\.\s*)?(.+)", txt)]
+        heads.sort()
+        miss_inline = []
+        for idx, (pos, name) in enumerate(heads):
+            end = heads[idx + 1][0] if idx + 1 < len(heads) else len(txt)
+            block = txt[pos:end]
+            c = next((x for x in (data.get("characters") or []) if x.get("name") == name.strip()), None)
+            if not c:
+                continue
+            for k in ("leidian", "yumen"):
+                cats = [str(i.get("category")) for i in (c.get(k) or []) if isinstance(i, dict)]
+                if cats and not any(cat in block for cat in cats):
+                    miss_inline.append(f"{name}/{k}")
+        if miss_inline:
+            print(f"   [缺失] 这些角色的明细没写进自己条目：{'、'.join(miss_inline[:8])}")
+        else:
+            print("   书评：每位角色的雷点/郁闷点都在其条目内  ✅")
+
     print(f"\n== 3. 元数据「」标签抽查 ==")
     print(f"   共 {len(spans)} 条，未逐字命中 {len(label)} 条（多为指代性标签/概括，非引文主张）")
     for s in label[:25]:
