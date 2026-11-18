@@ -104,6 +104,22 @@ def main():
     if not miss:
         print(f"   全部 {len(data.get('characters', []))} 个角色都有外貌字段 ✅")
 
+    # ---- 2b) 名场面台词覆盖（做视频用）----
+    print("\n== 2b. 名场面台词 ==")
+    chars = data.get("characters", [])
+    has_line = 0
+    for c in chars:
+        sl = c.get("signature_line")
+        q = (sl.get("quote") if isinstance(sl, dict) else sl) or ""
+        if str(q).strip():
+            has_line += 1
+            if M and not hit(str(q)):
+                print(f"   [未命中] [{c.get('name')}] {str(q)[:60]}")
+        else:
+            print(f"   [缺失] {c.get('name')}：signature_line 为空")
+    print(f"   {has_line}/{len(chars)} 个角色有名场面台词"
+          + ("  ✅" if has_line == len(chars) else "  ⚠️"))
+
     # ---- 3) 元数据里的「」标签（人工抽查用）----
     spans = []
 

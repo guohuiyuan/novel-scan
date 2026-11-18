@@ -57,9 +57,11 @@
 1. 【行号规则】成品正文**不写行号**。正文用 ≤50 字原文引文定位（引文照抄，可 grep 验证）。
 2. 【外貌】「外貌与形象」必须写：①可复述的外形锚点（发色/瞳色/体态/身高/标志穿戴/疤痕胎记）；
    ②作者没写的维度要明说"作者没交代"；③不许按角色模板脑补。至少给 1 条原文引文进 JSON 的 appearance_quotes。
-3. 疑似碎片逐一 grep 裁定归属（是本人别名 / 是别人 / 是幻觉），结论写进清洗记录。
-4. 严禁把其他角色剧情写进本章。
-5. 清洗记录小节可写行号（供审计）；章末标注「已核对节点数」与「删除条目数」。
+3. 【名场面】挑一句她本人说出口、情绪最满的台词进 `signature_line`（告白/翻脸/立誓/诀别那一类），
+   逐字照抄，不改写不拼接；它是后面 AI 配音的文本，错一个字口型就不对。找不到就留空并说明。
+4. 疑似碎片逐一 grep 裁定归属（是本人别名 / 是别人 / 是幻觉），结论写进清洗记录。
+5. 严禁把其他角色剧情写进本章。
+6. 清洗记录小节可写行号（供审计）；章末标注「已核对节点数」与「删除条目数」。
 
 已核实事实清单（不得推翻，若笔记与之冲突按此清单并报告）：
 {verified_facts}
@@ -80,12 +82,15 @@
   "name": "", "aliases_verified": [], "aliases_rejected": [{"alias":"","reason":""}],
   "importance_rank": 1, "identity": "",
   "appearance": "", "appearance_quotes": [],
+  "appearance_prompt": "",
   "personality": "",
   "relationship_to_mc": "",
   "purity": {"chu":"处|非处|未知","jingshen_chu":"精神初|非初|未知","hunyin":"初婚|有婚史婚约|未知","chumo":"初摸|被非男主触碰|未知","verdict":"全初|部分初|非初|未知","evidence":["引文…"]},
   "leidian": [{"category":"","evidence":"","quote":""}],
   "yumen": [{"category":"","evidence":"","quote":""}],
-  "key_events": ["…"], "quotes": ["…"], "confidence": "high|medium|low"
+  "key_events": ["…"], "quotes": ["…"],
+  "signature_line": {"quote":"","scene":"","line_no": 0},
+  "confidence": "high|medium|low"
 }
 ```
 
@@ -95,4 +100,11 @@
 3. purity 四维证据不足一律 "未知"，禁止默认全初；verdict 与四维一致。
 4. 【语言规则】所有文字字段（identity/arc/evidence/purity 各维/verdict）必须用大白话陈述，禁止"守恒/双守恒/四维守恒/三维未知"这类行话——例如写"处女与动心有明文，婚姻留白"，不写"双守恒"。
 5. `appearance` ≤80 字，写外形锚点，不写剧情；`appearance_quotes` 1-3 条原文照抄（审计会逐字核验，凑不出来就留空并在 appearance 里写"作者未正面描写"）。
-6. aliases_rejected 记录被剔除的别名与理由（0命中/属于别人/是作品内角色名等）。
+6. `appearance_prompt` 是出图输入：英文 tag、逗号分隔、20-40 个，**只写腰部以上可见的东西**
+   （发色用明确词如 `jet black hair`、瞳色、肤质、脸型、**一套**上衣、领口、耳颈饰品、**一个**表情）。
+   **禁止**写鞋/裤/裙长/腿/身高（会被拉成全身照），禁止写剧情和"气质""气场"这类画不出来的词，
+   禁止把她在全书穿过的衣服全列上。画风与构图由脚本补，你不要写 `masterpiece`/`simple background` 之外的东西。
+   例：`long jet black hair, hair down, big brown eyes, fair skin, red lips, black tuxedo, white bow tie, cold expression`
+7. `signature_line`：她本人说出口的一句台词，≤60 字，**逐字照抄**（不改写、不拼接、不省略），
+   配一句 `scene` 说明当场情形；`line_no` 填原文行号仅供核对。
+8. aliases_rejected 记录被剔除的别名与理由（0命中/属于别人/是作品内角色名等）。

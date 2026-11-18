@@ -518,7 +518,7 @@ def cmd_digest(args):
     if os.path.exists(ap_path):
         with open(ap_path, encoding="utf-8") as f:
             txt = f.read()
-        m = re.search(r"^## %s（.*?)(?=^## |\Z)" % re.escape(args.character),
+        m = re.search(r"^## %s（.*?(?=^## |\Z)" % re.escape(args.character),
                       txt, flags=re.M | re.S)
         if m:
             ap_sec = "## 外貌线索（脚本预抽）\n" + m.group(0).strip() + "\n"

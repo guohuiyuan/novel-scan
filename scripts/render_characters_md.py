@@ -8,6 +8,7 @@ novel-scan skill: render_characters_md.py
 """
 import argparse
 import json
+import os
 import re
 
 PURITY_KEYS = [("chu", "处"), ("jingshen_chu", "精神初"), ("hunyin", "初婚"), ("chumo", "初摸")]
@@ -47,7 +48,7 @@ def purity_line(pur):
     return f"- **纯洁度**：{line}" + (f" —— **{clean(verdict)}**" if verdict else "")
 
 
-def render(data):
+def render(data, img_dir=None):
     out = [f"# {data.get('book','')} · 人物卡", ""]
     chars = data.get("characters", [])
     n_lei = sum(len(c.get("leidian", [])) for c in chars)
@@ -97,6 +98,19 @@ def render(data):
         apq = [clean(q) for q in (c.get("appearance_quotes") or []) if clean(q)]
         if apq:
             out.append("  > 外貌依据：" + " / ".join(f"「{q}」" for q in apq))
+        if img_dir:
+            for fn in sorted(os.listdir(img_dir)) if os.path.isdir(img_dir) else []:
+                if fn.lower().endswith((".webp", ".png", ".jpg")) and clean(c.get("name", "")) in fn:
+                    out.append("")
+                    out.append(f"![{c.get('name','')}](人物图/{fn})")
+                    break
+        sl = c.get("signature_line")
+        if isinstance(sl, dict) and clean(sl.get("quote", "")):
+            scene = clean(sl.get("scene", ""))
+            out.append(f"- **名场面**：「{clean(sl['quote'])}」"
+                       + (f" —— {scene}" if scene else ""))
+        elif isinstance(sl, str) and clean(sl):
+            out.append(f"- **名场面**：「{clean(sl)}」")
         out.append(purity_line(c.get("purity", {})))
         evs = [clean(e) for e in (c.get("purity", {}).get("evidence") or []) if clean(e)]
         if evs:
@@ -136,9 +150,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--img-dir", help="人物图目录；给了就在卡片里嵌图")
     args = ap.parse_args()
     data = json.load(open(args.json, encoding="utf-8"))
-    md = render(data)
+    md = render(data, args.img_dir)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(md)
     print(f"[OK] {args.out} ({len(md)} chars)")

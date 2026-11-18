@@ -31,3 +31,16 @@
 ## 外貌采集的两个坑
 - **不是没有，是没进成品**：JSON 的 `appearance` 一直是填的（都市猎人 13 人全有，113-147 字），人物卡也渲染了，但**情节速览报告里一次都没出现**——grep 报告 `外貌|容颜|容貌|肌肤` 命中 0。原因：报告的"主要角色速览"规范只写了"定位身份→经历→纯洁度→结局"，没要求外貌。
 - **别用角色模板脑补**：外貌字段容易写成"肌肤胜雪、明眸皓齿"套话。要求写成可复述的锚点（发色/瞳色/体态/身高/标志穿戴/疤痕胎记），作者没写的维度明说"作者没交代"。
+
+## 外貌反推出图（都市良人行 4 人实测，2026-11-18）
+- **写了鞋/裤/裙长/腿/身高就一定出全身照**：`long legs, high heels, capri pants` 三个 tag 直接把"upper body"顶掉。`appearance_prompt` 只写腰部以上。
+- **默认构图会被掰成 POV**：只给 `upper body, looking at viewer` 时，模型爱画成朝镜头伸手/低头俯身。加 `arms at sides, standing` + 负向 `outstretched arm, reaching towards viewer, pov, hand in foreground` 才稳住。
+- **水印**：`watermark, signature, username` 拦不住画师签名，要补 `logo, artist name, copyright name`。
+- **发色偏色**：只写 `black hair` 会出绿/蓝挑染，写 `jet black hair` 并加负向 `streaked hair, green hair` 才纯黑。
+- **一套衣服一个表情**：把全书穿过的都列上会串成一身怪衣服；`cold expression` 和 `smile` 同时写会互相打架。
+- 结论：`--steps 12` 明显比 8 稳；`--resolution portrait` 920×1536 正好做竖屏视频。
+
+## 子代理会因原文露骨而拒答
+- 都市良人行里一位女角的样本窗口露骨度高，子代理直接回了"无法回答"，同批另外三个正常完成。
+- 处理：重派时明确"只提取非露骨事实（身份/外貌/关系/台词），遇到露骨段落跳过不引用"，仍拿不到就由主代理按已抽线索自己写 JSON，并标 `confidence: medium`。
+- 别把拒答当成"这个角色没内容"——`characters.tsv` 里频次高的角色必须有 JSON。

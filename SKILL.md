@@ -16,7 +16,11 @@ description: |
 
 - **原文 txt**：由使用者在对话中提供路径，或放入工作区约定的 `novels/` 目录；skill 不依赖固定盘符。
 - **输出目录**：默认 `<工作区>/novel-scan-results/<书名>/`（`_prescan/`、`scan_notes/`、`json/`、人物卡、报告、手机长图都放这里）；使用者指定了输出位置则从其指定。
-- **Python**：任意 Python 3.10+；`prescan.py` 只用标准库，渲染人物卡/手机长图依赖 `markdown`，长图另需 `playwright`（可选，`--merge` 还需 Pillow）。
+- **Python**：任意 Python 3.10+；`prescan.py` / `assemble_json.py` 只用标准库，渲染人物卡/手机长图依赖 `markdown`，长图另需 `playwright`（可选，`--merge` 还需 Pillow）。
+- **出图（可选）**：依赖 **`latent-media` skill**（`scripts/latent.py` 调 https://latent.moe）。
+  - 图像 key 前缀 `lat_sk_`，写在 latent-media 的 `keys.env`（已 gitignore）或环境变量 `LATENT_IMAGE_KEY`，**不要写进本仓库**。
+  - 只出图时不需要任何 cookie；`python <latent>/scripts/latent.py doctor` 里 `image.ok=true` 即可。
+  - 同一时刻只允许 1 个渲染任务，所以**串行出图**，不要并发。
 
 ## 路径选择
 
@@ -63,13 +67,14 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
   ```
   产出 `_prescan/char_<人物名>.md`（实测一个角色约 30KB，而全量 24 份笔记是 392KB）。
 - 子代理只读这一个文件 + `appearance.md` 里自己那节，**禁止重读全部分卷笔记**；要复核原文时按笔记里的行号定向 Grep ±30 行。
-- 每人产出：**人物 JSON 片段**（schema 见模板三）+ 原始笔记备查 + 清洗记录；
+- 每人产出：**人物 JSON 片段**（schema 见模板三，含 `appearance_prompt` 与 `signature_line`）+ 原始笔记备查 + 清洗记录；
 - **同样一次并行 6-8 个**；
 - SPLIT-PAIR 检查：别名重叠+剧情互斥的并成一人；疑似碎片逐一 grep 裁定。
 
-### D. 组装交付（主代理，两件套）
-1. **人物数据 JSON**：合并各角色片段为 `<书名>_人物数据.json`——顶层 `book/generated_at/source/male_protagonist/characters[]/book_leidian_summary[]/book_yumen_summary[]`；全书级汇总从角色条目聚合去重。
-2. **人物卡 Markdown**：`python <skill>/scripts/render_characters_md.py --json <人物数据.json> --out <书名>_人物卡.md`。展示规则（用户实测反馈固化）：**不显示剔除别名**（只显示 aliases_verified）、**全文不出现行号**（渲染时自动剥离 L\d+ 及含行号的括号注记）、**置信度只显示等级**（高/中高/中/低，长说明留在 JSON 原文件里不进卡片）。
+### D. 组装交付（主代理，两件套 + 图）
+0. **合并片段**：`python <skill>/scripts/assemble_json.py --dir <输出目录>/json --book <书名> --out <书名>_人物数据.json --source "<原文文件名（N章）>"`——按 `importance_rank` 排序、聚合全书级雷点/郁闷点、顺便点名缺 `appearance_prompt` / `signature_line` 的角色。
+1. **人物数据 JSON**：顶层 `book/generated_at/source/male_protagonist/characters[]/book_leidian_summary[]/book_yumen_summary[]`；全书级汇总从角色条目聚合去重。
+2. **人物卡 Markdown**：`python <skill>/scripts/render_characters_md.py --json <人物数据.json> --out <书名>_人物卡.md [--img-dir <输出目录>/人物图]`。展示规则（用户实测反馈固化）：**不显示剔除别名**（只显示 aliases_verified）、**全文不出现行号**（渲染时自动剥离 L\d+ 及含行号的括号注记）、**置信度只显示等级**（高/中高/中/低，长说明留在 JSON 原文件里不进卡片）；给了 `--img-dir` 且找得到对应图，会在卡片里嵌 `![形象](人物图/01_xxx.webp)`。
 3. **情节速览报告**：`<书名>_情节速览报告.md`——一句话简介与题材标签、分卷剧情梗概表（卷|主线事件|感情进度）、男主速览、**主要角色速览（散文式，仿清风扫书/北美悍警格式）**、雷点汇总表（类别|涉及角色|事实+引文）、郁闷点汇总表、排雷结论（适合/避雷什么读者）。**全部事实与 JSON 同源**，从验证过的材料转写，不新增未核验内容。
 4. 审计：一条命令跑 `python <skill>/scripts/audit_deliverables.py --json <人物数据.json> --novel <原文.txt> --docs <人物卡.md> <报告.md> [--probe 探针词...]`。
    - 它核 5 项：①`quotes[]` 与 `appearance_quotes[]` 引文**逐字**回原文命中（允许 …… / — 分段拼接，此项目标 100%）；②**外貌覆盖**（每个角色 `appearance` 不得为空，过短会点出来）；③元数据字段里「」包的概括标签单列出来人工抽查（`key_events`/`evidence` 里的「」多为指代性标签，非引文主张，不必强改）；④成品 md 的 `L\d+` 行号残留（应为 0）；⑤幻觉实体探针（填其他书角色名确认无串章）。
@@ -83,24 +88,62 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
    - 长文档（人物卡约 45k 字）建议 `--dense --max-height 3000 --per-folder 20`：字号收紧一档、张数约减四成，并按贴吧单楼层 20 张上限自动分「第N楼」目录。
    - `--merge` 额外拼一张无缝全文长图（尺寸很大，仅供本地看）。
    - 出图后自检：逐张打印 `宽×高px` 与体积，校验「单张 ≤5MB / 像素高 ≤5680」，并在目录里写 `_图片顺序.txt`。
-6. present_files 交付 JSON + 人物卡 md + 报告 md（+ 可选贴吧图）。
+6. 可选：**女主图**（按外貌反推出图，做扫书视频的封面/立绘）。
+   ```bash
+   python <skill>/scripts/gen_portraits.py --json <人物数据.json> --out <输出目录> \
+       --style anime            # anime | watercolor | realistic
+   ```
+   - 喂给模型的是 JSON 里的 `appearance_prompt`（英文 tag），脚本自动补构图/画风/画质 tag 与负向词；产物落 `<输出目录>/人物图/<rank>_<角色名>.webp`，索引写 `人物图/_图片索引.json`（含 prompt、seed、名场面台词）。
+   - `--only 曾柔,于紫彤` 只出指定角色；`--dry-run` 先看提示词不花额度；`--reindex` 断点续跑后按现有图片重建索引。
+   - **出图规矩（实测踩过的坑）**：`appearance_prompt` 只写**腰部以上**能看到的东西（发色/发型、瞳色、肤质、脸型、上衣、领口、耳颈饰品）——一旦写了裤、裙长、鞋、腿、身高，模型必然拉成全身照；**一套衣服 + 一个表情**，别把她在全书穿过的都列上；发色用明确词（`jet black hair` / `dark brown hair`），否则会偏绿偏蓝。
+   - 默认 `--resolution portrait`（920×1536），竖屏视频直接用；`--steps 12`。
+7. present_files 交付 JSON + 人物卡 md + 报告 md（+ 人物图目录 + 可选贴吧图）。
 
 ## 外貌采集规范（一等公民，不许漏）
 
 用户明确要求"扫书要能看出这个人长什么样"（对标公众号扫书帖的女主条目：`容貌冷艳无双，右眼角缀着一抹朱砂`）。
 
 - **分块笔记必须记外貌**：本块内出现的容貌/发色/瞳色/体态/身高/标志性穿戴/疤痕胎记，逐条原文照抄（≤50 字）+ 行号。没有就写"本块无"。
-- **JSON 三件套**：`appearance`（≤80 字的大白话外形速写）+ `appearance_quotes`（1-3 条原文引文，供审计逐字核验）。
+- **JSON 三件套**：`appearance`（≤80 字的大白话外形速写）+ `appearance_quotes`（1-3 条原文引文，供审计逐字核验）+ `appearance_prompt`（出图用的英文 tag）。
 - **诚实优先**：作者没写就写"作者未正面描写，只能从零散处拼：……"，**禁止按角色模板脑补**（不许给每个女主都配"肌肤胜雪、明眸皓齿"）。
 - **报告必须出现**：主要角色速览每段**第一句就是外貌锚点**（发色/瞳色/体态/标志物之一，读者能复述），再进身份与经历。
 
+### appearance_prompt 写法（出图用，实测定的规矩）
+
+它是"把外貌反推成图"的唯一输入，写歪了整张图就废。**英文 tag、逗号分隔、20-40 个**，只写原文有依据的：
+
+| 该写 | 不该写 |
+|---|---|
+| `long jet black hair, hair down, big brown eyes, fair skin, red lips` | 「气质清冷」「像一朵白莲」这类画不出来的词 |
+| `pink striped short sleeve shirt, black tuxedo, white bow tie`（**只挑一套**） | 把她在全书穿过的衣服全列上（模型会串成一身怪衣服） |
+| `petite, slim` / `tall, curvy`（**腰部以上的体态**） | `long legs, high heels, jeans, ankle boots`（必被拉成全身照） |
+| 一个表情：`cold expression` / `energetic smile` | 同时写 `cold` + `smile` + `blush`，互相打架 |
+| 发色用明确词：`jet black hair` / `dark brown hair` | 只写 `black hair`，出来常带绿/蓝挑染 |
+
+画风、构图（`upper body, portrait, simple background`）、画质 tag 与负向词由 `gen_portraits.py` 统一补，**子代理不要写**。
+
+## 名场面台词规范（做扫书视频用）
+
+每个角色必须有一条 `signature_line`，它是后面 AI 配音 + 分镜的锚点：
+
+```jsonc
+"signature_line": {"quote": "她本人说出口的一句台词，≤60字", "scene": "什么情形下说的，≤40字", "line_no": 12345}
+```
+
+- **必须是她（他）亲口说的**，不能是旁白、不能是男主的台词、不能两句拼一句。
+- **逐字照抄**引号内的原文，不改写、不删字、不用省略号藏字——它会直接送去 TTS，改一个字口型就不对。
+- 选**情绪最满、最能立住这个角色**的一句（告白、翻脸、立誓、认输、诀别），不要选功能性对话（"你吃了吗"）。
+- 找不到像样的台词就留空并在 `scene` 写"未找到明确台词"，**不许替她编一句**。
+- `line_no` 只用于回原文核对，成品卡片与报告都不显示行号。
+
 **主要角色速览规范（用户实测反馈固化，禁止退回表格）**：
 - 每个角色一段散文（不是表格行）：**外貌（一句）→ 定位身份 → 经历线（怎么相遇/关系怎么演变/关键转折）→ 纯洁度结论用大白话（哪些维度有明文、哪些作者没写记未知，禁止"守恒/四维/三维未知"这类行话）→ 结局**。
+- 段末可接一句 **`名场面：「台词」——场景`**（同 `signature_line`，原文照抄），给扫书视频预留素材位。
 - 示例句式：「XX：黑长直，下巴总微微抬着，一副生人勿近的清冷相。京都大学学生会纪律部副部长……。纯洁度结论：四项全干净（证据明文）/处女与动心有明文，婚姻留白。结局：……」
 - 数据层（JSON）仍保留结构化四维字段，行话只许存在于 JSON，不许浮上报告。
 - 可选：末尾加一张**主观评分表**（情节/文笔/感情/车速/人物刻画/新意/压抑度/总评，档位 S/A+/A/A-/B+/B/C，每条一句话理由），表头注明"主观判断，非原文事实"。
 
-## 人物 JSON schema（v1）
+## 人物 JSON schema（v2）
 
 ```jsonc
 {
@@ -110,12 +153,15 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
     "name":"", "aliases_verified":[], "aliases_rejected":[{"alias":"","reason":""}],
     "importance_rank":1, "identity":"",
     "appearance":"", "appearance_quotes":["≤50字原文照抄"],
+    "appearance_prompt":"英文 tag，只写腰部以上可见",
     "personality":"", "relationship_to_mc":"",
     "purity": {"chu":"处|非处|未知","jingshen_chu":"精神初|非初|未知","hunyin":"初婚|有婚史婚约|未知","chumo":"初摸|被非男主触碰|未知",
                "verdict":"全初|部分初|非初|未知", "evidence":["引文…"]},
     "leidian": [{"category":"绿帽|死女|送女|背叛|万人骑|龟作","evidence":"","quote":""}],
     "yumen":   [{"category":"郁闷点26类之一","evidence":"","quote":""}],
-    "key_events": ["…"], "quotes": ["…"], "confidence": "high|medium|low"
+    "key_events": ["…"], "quotes": ["…"],
+    "signature_line": {"quote":"","scene":"","line_no":0},
+    "confidence": "high|medium|low"
   }],
   "book_leidian_summary": [{"category":"","evidence":"","quote":""}],
   "book_yumen_summary": [{"category":"","evidence":"","quote":""}]
@@ -129,3 +175,4 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
 - 旧流程实测（都市猎人 21.5 万行 / 24 卷 / 13 角色）：B 阶段**串行 58 分钟**（2.4 分/卷）+ C 阶段**串行 41 分钟**（3.2 分/人）= **108 分钟**。
   瓶颈不是模型慢，是**没有并行 + 每人重读全部笔记**。按本版执行（6-8 并行、每人只读切片）目标 **15-25 分钟**。
 - 不要重跑已验证过的阶段：笔记→人物→组装均可断点复用（看 `state.json` 的 `done`）。
+- 出图：单张 **10-25 秒**（含排队），串行；`--steps 12` 比 8 稳定明显。10 个角色约 3-5 分钟。额度与语音分开，撞 `409 too_many_active` 说明有别的任务在跑，等它完成再提交。
