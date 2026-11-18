@@ -1,25 +1,28 @@
 # novel-scan
 
-长篇轻小说/网文扫书 Agent Skill —— 把一本 `.txt` 小说变成**两件套产物**：
+长篇网文扫书 Agent Skill —— 把一本 `.txt` 小说变成一套能直接发出去的扫书稿：
 
-1. **人物数据 JSON + 人物卡 Markdown**：逐角色结构化数据（身份/别名/纯洁度四维判定/雷点/郁闷点），渲染成人物卡
-2. **情节速览报告**：分卷梗概表 + 人物速览 + 雷点/郁闷点汇总 + 排雷结论
+1. **扫书稿 Markdown**（主交付物，对标公众号扫书帖）：标题党式大标题 + 随机封面 + 书名/作者/字数/题材/状态/平台 + 8 维评分（S→C）+ 简介 + 男主卡 + 女主逐条（身份/外貌/经历线/性格特点/名场面台词）+ 分维度点评 + 排雷
+2. **人物数据 JSON + 人物卡 Markdown**：逐角色结构化数据（身份/外貌锚点/别名裁定/纯洁度四维/雷点/郁闷点），可导出手机长图
+3. **人物图 / 封面**：按外貌反推 `appearance_prompt` 出图（`latent.moe`），封面从公开图库随机 roll 一张 SFW 图
 
 ## 核心理念
 
 - **线索 ≠ 事实**：任何没落原文的陈述不许进成品。子代理直接读原文、边读边记，幻觉在源头被杜绝——没有"事后清洗"阶段
-- **agent 自扫主路径**：完全自包含，不依赖任何外部项目、LLM 抽取流水线或本地路径产物
 - **成品无行号**：阅读界面无法跳转行号，用 ≤50 字原文引文定位（可全文搜索验证）；行号只进内部笔记
-- **雷点/郁闷点有唯一口径**：男性向网文毒点分类学（雷点 6 类 / 郁闷点 26 类 + 「初/处」术语），见 `references/leidian-taxonomy.md`，禁止泛化为"读起来难受的情节"
+- **外貌是一等公民**：每个角色必须有可复述的外形锚点（发色/瞳色/体态/标志物），作者没写就明说，禁止按模板脑补
+- **名场面台词逐字照抄**：留给 TTS/分镜做扫书视频，改一个字口型就不对
+- **雷点/郁闷点有唯一口径**：雷点 6 类 / 郁闷点 26 类 + 「初/处」术语，见 `references/leidian-taxonomy.md`
 - **纯洁度四维**（处/精神初/初婚/初摸）证据不足一律记"未知"，禁止默认全初
 
 ## 流程
 
 ```
-A 侦察（卷级行号区间 + 人物频次）
-→ B 分卷扫描（子代理并行直读原文，边读边记笔记）
-→ C 逐人物汇总（归并笔记 → 回原文复核 → 产出角色 JSON）
-→ D 组装交付（合并 JSON → 人物卡 md → 情节速览报告 → 引文审计）
+A0 脚本预扫（纯正则，秒级；切块 + 人物候选 + 外貌/雷点线索 + 重复收录检测）
+→ B 分块扫描（子代理 6-8 并行，一块一次 Read 读完）
+→ C 逐人物汇总（每人一份拼装切片 → 角色 JSON + 笔记）
+→ C2 书级字段（一个子代理写全书：书况/8 维评分/简介/男主/分维度点评/标题卖点）
+→ D 组装交付（合并 JSON → 封面 roll → 书评 md → 人物卡 md → 审计 → 人物图 → 手机长图）
 ```
 
 ## 文件结构
@@ -28,13 +31,21 @@ A 侦察（卷级行号区间 + 人物频次）
 SKILL.md                      # 主流程（Agent 读取的入口）
 references/
   leidian-taxonomy.md         # 雷点/郁闷点分类学（唯一判定口径）
-  subagent-prompt.md          # 分卷扫描/逐人物汇总/JSON 模板
-  pitfalls.md                 # 三本书实跑沉淀的历史教训
+  subagent-prompt.md          # 分块扫描/逐人物/JSON/书级字段四套模板
+  pitfalls.md                 # 多本书实跑沉淀的历史教训
 scripts/
+  prescan.py                  # 预扫：切块表、人物候选、外貌/雷点线索、--digest 拼装切片
+  detect_dup_range.py         # txt 混了两版时找重复边界（规范化窗口比对）
+  roster_check.py             # 合并块笔记出场角色表，抓"有出场但没 JSON"的漏人
+  assemble_json.py            # 合并角色 JSON + 书级字段，聚合全书雷点/郁闷点
+  render_bookreview_md.py     # JSON → 扫书稿（标题 + 封面 + 评分 + 人物 + 排雷）
   render_characters_md.py     # JSON → 人物卡 Markdown（无行号版）
   render_characters_html.py   # JSON → 可视化 HTML（备用）
-  merge_sections.py           # 章节合并 + 目录锚点
   render_tieba_cards.py       # md 原格式 → 贴吧手机端连图
+  gen_portraits.py            # 按 appearance_prompt 出人物图（latent.moe，要 key）
+  pick_cover.py                # 书评封面：公开图库随机 roll 一张 SFW 图（免 key）
+  merge_sections.py           # 章节合并 + 目录锚点
+  audit_deliverables.py       # 交付前自检：引文逐字/外貌/名场面/书级字段/行号残留
 ```
 
 ## 安装（WorkBuddy / Claude Code 类 Agent）
@@ -44,6 +55,8 @@ scripts/
 ```bash
 git clone https://github.com/guohuiyuan/novel-scan.git ~/.workbuddy/skills/novel-scan
 ```
+
+出图需要配套的 `latent-media` skill；只跑扫读与封面则不需要任何 key。
 
 ## 声明
 

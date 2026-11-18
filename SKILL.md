@@ -2,7 +2,7 @@
 name: novel-scan
 description: |
   长篇小说扫书流水线（agent 自扫主路径）：脚本预扫出分块与线索，子代理并行逐块读原文，逐人物汇总成三件套产物——
-  ①扫书稿 Markdown（对标公众号扫书帖：书名/作者/字数/题材/状态/平台 + 8 维评分 + 简介 + 男主 + 女主逐条（身份/外貌/经历线/性格特点/名场面）+ 分维度点评 + 排雷）；
+  ①扫书稿 Markdown（对标公众号扫书帖：标题党式大标题 + 随机封面 + 书名/作者/字数/题材/状态/平台 + 8 维评分 + 简介 + 男主 + 女主逐条（身份/外貌/经历线/性格特点/名场面）+ 分维度点评 + 排雷）；
   ②人物数据 JSON + 人物卡 Markdown（身份/外貌/别名/纯洁度四维判定/雷点/郁闷点，全部原文核验；可选导出手机长图）；
   ③人物图（按外貌反推 appearance_prompt 出图，男主默认一起出）。
   雷点/郁闷点判定遵循内置分类学（见 references/leidian-taxonomy.md），禁止泛化为"读起来难受的情节"。
@@ -19,6 +19,7 @@ description: |
 - **输出目录**：默认 `<工作区>/novel-scan-results/<书名>/`（`_prescan/`、`scan_notes/`、`json/`、人物卡、报告、手机长图都放这里）；使用者指定了输出位置则从其指定。
 - **Python**：任意 Python 3.10+；`prescan.py` / `assemble_json.py` 只用标准库，渲染人物卡/手机长图依赖 `markdown`，长图另需 `playwright`（可选，`--merge` 还需 Pillow）。
 - **出图（可选）**：依赖 **`latent-media` skill**（`scripts/latent.py` 调 https://latent.moe）。
+  - 人物图要图像 key；**书评封面不要 key**（走公开图库 `resolve`，见「书评标题与封面」）。
   - 图像 key 前缀 `lat_sk_`，写在 latent-media 的 `keys.env`（已 gitignore）或环境变量 `LATENT_IMAGE_KEY`，**不要写进本仓库**。
   - 只出图时不需要任何 cookie；`python <latent>/scripts/latent.py doctor` 里 `image.ok=true` 即可。
   - 同一时刻只允许 1 个渲染任务，所以**串行出图**，不要并发。
@@ -101,13 +102,22 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
 - **不要拆给多人写**，评分口径会打架；也**不要让它写女主条目**（女主由 C 阶段负责）。
 - 8 维评分固定：情节/文笔/感情/车速/人物刻画/新意/压抑度/总评，档位 S / A+ / A / A- / B+ / B / C，每项必须带一句落在文本事实上的理由（"文笔优美"这种空评会被审计挑出来）。
 - `blurb` 是剧情简介（200-400 字、2-3 段、不剧透结局）；`dimension_reviews` 五段（剧情/女主/车技/设定/缺点）；`side_characters` 收女主列表之外的配角，每人一行。
+- **`book_meta.headline_tags` 必填（3 个四字卖点）**：扫书帖的标题靠它，见「书评标题与封面」。要能一句话立住的梗（「扮猪吃虎」「圣门圣主」「双生姐妹」），不许写「剧情精彩」「文笔流畅」这种谁都能贴的。
+- `book_meta.cover_tags` 可选（2-3 个**英文**图库 tag，如 `1girl solo portrait`），封面 roll 图用；不写就用默认池。
 - 字数/章数/卷数可留空，`assemble_json.py` 会从 `_prescan/state.json` 自动补；但**预扫检测到重复收录时必须以 book_info.json 为准**（见下）。
 
 ### D. 组装交付（主代理，三件套 + 图）
 0. **合并片段**：`python <skill>/scripts/assemble_json.py --dir <输出目录>/json --book <书名> --out <书名>_人物数据.json --meta <输出目录>/book_info.json --source "<原文文件名>"`——按 `importance_rank` 排序、并入书级字段与男主卡、聚合全书级雷点/郁闷点，并点名缺 `appearance_prompt` / `signature_line` / 书级字段的角色。
 1. **人物数据 JSON**：顶层 `book/book_meta/generated_at/source/male_protagonist/characters[]/ratings/blurb/dimension_reviews/side_characters/coverage/book_leidian_summary[]/book_yumen_summary[]`。
-2. **扫书稿（主交付物）**：`python <skill>/scripts/render_bookreview_md.py --json <人物数据.json> --out <书名>_书评.md --img-dir <输出目录>/人物图`。体例对标公众号扫书帖，顺序固定：
-   书况（作者/字数/章数）→ 题材/状态/平台 → 8 维评分表 + 每项一句理由 → 简介 → 男主（arc 一段 + 外貌/性格 + 名场面）→ 女主逐条（身份+外貌+经历线+性格特点+名场面，各配一张图）→ 其他角色 → 分维度点评（剧情/女主/车技/设定/缺点）→ 排雷（雷点/郁闷点）→ 数据说明。
+2. **扫书稿（主交付物）**：先 roll 一张封面，再渲染。
+   ```bash
+   python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp \
+       --json <书名>_人物数据.json --seed 22     # 不给 --seed 就是随机
+   python <skill>/scripts/render_bookreview_md.py --json <人物数据.json> --out <书名>_书评.md --img-dir <输出目录>/人物图
+   ```
+   体例对标公众号扫书帖，顺序固定：
+   **H1 标题（`完结仙草：都市后宫 扮猪吃虎 圣门圣主 双生姐妹 111万字`）→ 封面图 → 书况（《书名》+ 作者/字数/章数/卷数）→ 题材/状态/平台 → 8 维评分表 + 每项一句理由 → 简介 → 男主（arc 一段 + 外貌/性格 + 名场面）→ 女主逐条（身份+外貌+经历线+性格特点+名场面，各配一张图）→ 其他角色 → 分维度点评（剧情/女主/车技/设定/缺点）→ 排雷（雷点/郁闷点）→ 数据说明**。
+   - **标题不要用《书名》当 H1**：扫书帖靠标题党拉人，书名留给第二行的书况。标题组装规则与封面规矩见下节「书评标题与封面」。
    - **男主段只放 `arc`**：identity 与 arc 会整段重复（实测"十八岁的禹言是猎鹰最年轻的小队长"说了两遍），有 arc 时不再拼 identity；女主有 arc 时 identity 只留第一句。
    - **女主的序号必须写成标题文本 `### N. 名字`，不能用 md 有序列表 `1.`**：列表项之间夹着空行和图片段落，渲染器会把每个 `N.` 判成新列表、从 1 重新编号——源文件里明明是 1…11，预览里全显示 1（实测踩过）。同理「其他角色」用 `- **名字**（身份）：一句话`，不要 `+` 前缀。
 3. **人物卡 Markdown（备查，字段详细）**：`python <skill>/scripts/render_characters_md.py --json <人物数据.json> --out <书名>_人物卡.md [--img-dir <输出目录>/人物图]`。展示规则（用户实测反馈固化）：**不显示剔除别名**（只显示 aliases_verified）、**全文不出现行号**（渲染时自动剥离 L\d+ 及含行号的括号注记）、**置信度只显示等级**（高/中高/中/低，长说明留在 JSON 原文件里不进卡片）；男主卡同样渲染外貌/名场面/关键事件/图。
@@ -123,7 +133,7 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
    - 长文档（人物卡约 45k 字）建议 `--dense --max-height 3000 --per-folder 20`：字号收紧一档、张数约减四成，并按贴吧单楼层 20 张上限自动分「第N楼」目录。
    - `--merge` 额外拼一张无缝全文长图（尺寸很大，仅供本地看）。
    - 出图后自检：逐张打印 `宽×高px` 与体积，校验「单张 ≤5MB / 像素高 ≤5680」，并在目录里写 `_图片顺序.txt`。
-6. 可选：**人物图**（按外貌反推出图，做扫书视频的封面/立绘）。**男主默认一起出（排 `00`）**。
+6. 可选：**人物图**（按外貌反推出图，做扫书视频的立绘）。**男主默认一起出（排 `00`）**。书评第一屏那张封面**不是这里出的**（走 `pick_cover.py`，见「书评标题与封面」）。
    ```bash
    python <skill>/scripts/gen_portraits.py --json <人物数据.json> --out <输出目录> \
        --style anime --artist morikura_en   # anime | watercolor | realistic
@@ -135,7 +145,44 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
    - **出图规矩（实测踩过的坑）**：`appearance_prompt` 只写**腰部以上**能看到的东西（发色/发型、瞳色、肤质、脸型、上衣、领口、耳颈饰品）——一旦写了裤、裙长、鞋、腿、身高，模型必然拉成全身照；**一套衣服 + 一个表情**，别把她在全书穿过的都列上；发色用明确词（`jet black hair` / `dark brown hair`），否则会偏绿偏蓝；男主的 tag 里不要写 `1girl`（脚本会换成 `1boy`）。
    - 默认 `--resolution portrait`（920×1536），竖屏视频直接用；`--steps 12`。
    - **水印是拦不住的**：`watermark, signature, logo` 之外还要补 `chinese text, english text, text block, corner label, magazine cover, barcode, stamp`，否则偶尔会在角落画一块刊头小字。
-7. present_files 交付 JSON + 书评 md + 人物卡 md（+ 人物图目录 + 可选贴吧图）。
+7. present_files 交付 JSON + 书评 md + 人物卡 md（+ 封面 + 人物图目录 + 可选贴吧图）。
+
+## 书评标题与封面（对标扫书帖的第一屏）
+
+### 标题结构
+
+```
+完结仙草：都市后宫 扮猪吃虎 圣门圣主 双生姐妹 111万字
+└结算词┘ └题材+后宫┘ └─ 四字卖点 ×3 ─┘ └字数┘
+```
+
+- **结算词**由总评档位定（`render_bookreview_md.py` 自动拼）：S→**神作**、A+/A/A-→**仙草**、B+/B/B-→**粮草**、C 系→**干粮**、D→**毒草**；`status` 为完结加前缀「完结」，连载中为「在更」，未知不加。
+- **题材**取 `book_meta.genre[0]`，genre 里有「后宫」就补成「都市后宫」这种两段式。
+- **四字卖点 ×3** 来自 `book_meta.headline_tags`，是标题里唯一需要人写的东西：
+  - 必须是**可证的具体梗**：设定/身份反差/关系结构（「扮猪吃虎」「圣门圣主」「双生姐妹」「造车商战」）；
+  - **禁止**「剧情精彩」「文笔流畅」「值得一读」这类换本书也能贴的空话；
+  - 不写剧透结局的（「九人并娶」是结局，标题里别用）；
+  - 整句写死也行：`book_meta.headline` 有值就原样用，优先级最高。
+- **字数**由 `word_count` 归一到 `111万字`（去「约」「空格」「万字」重复），别在标题里塞「约」。
+- 标题**不用**《书名》：书名在第二行书况里，H1 只负责勾人。
+
+### 封面（从 latent 公开图库随机挑一张现成的非 NSFW 图）
+
+**封面是"挑现成的图"，不是"生成图"**：走 `resolve` 于公开图库取别人已发布的作品，不写 prompt、不调 `generate`、不占出图额度、不需要 key，秒级。
+
+```bash
+python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp --json <人物数据.json>   # 随机
+python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp --seed 22              # 复现某一张
+python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp --tags 1girl solo portrait --rank 982
+```
+
+- 服务端默认只返回 **SFW** 作品（越界报 `no_match ... Pass nsfw=1`）；脚本再对返回的 `nsfw` 字段做硬校验，抽到 true 直接重抽——**封面绝不用 NSFW**。
+- 默认标签 `1girl solo portrait`（池子 1000 张，偏向胸像/半身）。标签越多池子越小：`1girl+solo+city` 只剩 18 张、`scenery` 20 张；脚本会自动二分出可用张数，标签组合挑空时逐级放宽，最后兜底 `1girl`。
+- 产物旁写 `_封面.json` 留痕（artwork id / 排位 / 标签 / 模型 / 尺寸 / 作品页 URL），方便回溯与换图。
+- **必须目检**：机器只保证 SFW，不保证像样。挑出来是抽象图案、裁切怪异、带文字水印的，换 `--seed` 或加 `--rank` 重挑。实测 3 张里约 2 张可用，别直接交付没看过的图。
+- 一次想挑：连跑 3 个 `--seed` 出到临时目录，拼联系表看一眼再定（`PIL` 即可）。
+- 封面**不是**人物图：人物图按 `appearance_prompt` 生成、走 `gen_portraits.py`（有角色对应关系、要 key、要排队）；封面只是从图库借一张气氛图。
+- 渲染器会在 `--out` 同目录自动找 `封面.*` / `cover.*` 并插在标题下方，找不到就不插图（打印提示）。换封面后**重跑渲染**，md 只记文件名。
 
 ## 外貌采集规范（一等公民，不许漏）
 
@@ -188,7 +235,9 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
 {
   "book": "书名", "generated_at": "YYYY-MM-DD HH:MM", "source": "novels/xxx.txt",
   "book_meta": {"title":"", "author":"", "word_count":"", "genre":["都市","后宫"],
-                "status":"完结|连载中|未知", "platform":"起点|未知", "chapters":0, "volumes":0},
+                "status":"完结|连载中|未知", "platform":"起点|未知", "chapters":0, "volumes":0,
+                "headline":"整句标题（可选，有则原样用）",
+                "headline_tags":["四字卖点","×3，标题靠它"], "cover_tags":["1girl","solo","portrait"]},
   "ratings": {"情节":{"grade":"A-","reason":""}, "文笔":{},"感情":{},"车速":{},
               "人物刻画":{},"新意":{},"压抑度":{},"总评":{}},
   "blurb": ["简介段1","段2"],
@@ -230,3 +279,4 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
   瓶颈不是模型慢，是**没有并行 + 每人重读全部笔记**。按本版执行（6-8 并行、每人只读切片）目标 **15-25 分钟**。
 - 不要重跑已验证过的阶段：笔记→人物→组装均可断点复用（看 `state.json` 的 `done`）。
 - 出图：单张 **10-25 秒**（含排队），串行；`--steps 12` 比 8 稳定明显。10 个角色约 3-5 分钟。额度与语音分开，撞 `409 too_many_active` 说明有别的任务在跑，等它完成再提交。
+- 封面 roll：`pick_cover.py` **秒级**（二分探张数约 10 次请求 + 1 次下载），免 key、不占出图额度，随便重 roll。

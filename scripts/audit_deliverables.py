@@ -164,6 +164,38 @@ def main():
     if not (mp.get("name") and (mp.get("arc") or "").strip()):
         print("   [缺失] 男主卡无 arc（书评「男主」段会写不出来）")
 
+    # ---- 2d) 书评标题与封面 ----
+    print("\n== 2d. 书评标题与封面 ==")
+    head = (bm.get("headline") or "").strip()
+    tags = [str(t).strip() for t in (bm.get("headline_tags") or []) if str(t).strip()]
+    if head:
+        print(f"   标题（整句）：{head}")
+    elif tags:
+        print(f"   标题卖点：{' '.join(tags)}")
+    else:
+        print("   [缺失] headline_tags 为空 → 标题只剩「结算词：题材 字数」，缺扫码帖那股劲")
+    odd = [t for t in tags if not 2 <= len(t) <= 6]
+    if odd:
+        print(f"   [提示] 卖点长度不像四字/短词：{'、'.join(odd)}")
+    base = os.path.dirname(os.path.abspath(a.json))
+    cov = [f for f in sorted(os.listdir(base))
+           if os.path.splitext(f)[0] in ("封面", "cover")
+           and os.path.splitext(f)[1].lower() in (".webp", ".png", ".jpg", ".jpeg")] if os.path.isdir(base) else []
+    if cov:
+        info_p = os.path.join(base, "_封面.json")
+        note = ""
+        if os.path.exists(info_p):
+            try:
+                info = json.load(open(info_p, encoding="utf-8"))
+                note = f"  来源 latent 公开图库 rank={info.get('rank')} tags={' '.join(info.get('tags') or [])}"
+                if info.get("nsfw") is True:
+                    print("   [严重] 封面 nsfw=true，必须换图")
+            except Exception:
+                pass
+        print(f"   封面：{cov[0]}（{os.path.getsize(os.path.join(base, cov[0]))//1024}KB）{note}")
+    else:
+        print("   [缺失] 输出目录没有 封面.webp/cover.*（`pick_cover.py` 抽一张，封面是扫书帖第一屏）")
+
     # ---- 3) 元数据里的「」标签（人工抽查用）----
     spans = []
 

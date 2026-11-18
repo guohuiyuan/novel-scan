@@ -24,6 +24,87 @@ import re
 GRADE_ORDER = ["情节", "文笔", "感情", "车速", "人物刻画", "新意", "压抑度", "总评"]
 DIM_ORDER = ["剧情方面", "女主方面", "车技方面", "设定方面", "缺点方面"]
 
+# 总评档位 → 扫书帖的"粮草"结算词（清风体系：神作 > 仙草 > 粮草 > 干粮 > 毒草）
+SETTLE_WORD = {"S": "神作", "S-": "神作", "A+": "仙草", "A": "仙草", "A-": "仙草",
+               "B+": "粮草", "B": "粮草", "B-": "粮草",
+               "C+": "干粮", "C": "干粮", "C-": "干粮", "D": "毒草"}
+
+
+def grade_of(ratings, key="总评"):
+    v = (ratings or {}).get(key)
+    if isinstance(v, dict):
+        return clean(v.get("grade", ""))
+    return clean(v) if v else ""
+
+
+def settle_word(ratings, status):
+    """`完结仙草` / `在更粮草` / `仙草`：状态 + 档位结算词。"""
+    g = grade_of(ratings)
+    word = SETTLE_WORD.get(g.upper(), "")
+    if not word:
+        return ""
+    st = clean(status)
+    if st.startswith("完结"):
+        return "完结" + word
+    if "连载" in st or "在更" in st:
+        return "在更" + word
+    return word
+
+
+def short_count(word_count):
+    """`约 111 万字` → `111万字`（标题里不留空格与"约"）。"""
+    s = clean(word_count).replace(" ", "")
+    s = s.replace("约", "").replace("大约", "")
+    if not s:
+        return ""
+    if s[-1] in "字部":
+        return s.rstrip("部") + "字" if s[-1] == "部" else s
+    return s + "字"
+
+
+def headline_of(data):
+    """扫书帖标题：`完结仙草：都市后宫 扮猪吃虎 圣门圣女 姐妹让爱 111万字`
+
+    优先用 book_meta.headline（C2 阶段整句写死）；
+    否则用「结算词：题材 四字卖点×N 字数」拼，缺哪段就跳哪段。
+    """
+    bm = data.get("book_meta") or {}
+    if clean(bm.get("headline")):
+        return clean(bm["headline"])
+    ratings = data.get("ratings") or {}
+    head = settle_word(ratings, bm.get("status"))
+    genre = bm.get("genre")
+    if isinstance(genre, list):
+        genre = [clean(g) for g in genre if clean(g)]
+        main = genre[0] if genre else ""
+        tail = "后宫" if "后宫" in genre else ""
+        genre_s = main + (tail if tail and main != tail else "")
+    else:
+        genre_s = clean(genre)
+    tags = [clean(t) for t in (bm.get("headline_tags") or []) if clean(t)]
+    parts = [p for p in ([head] if head else []) + ([genre_s] if genre_s else []) + tags
+             + ([short_count(bm.get("word_count"))] if short_count(bm.get("word_count")) else []) if p]
+    if not parts:
+        return f"《{bm.get('title') or data.get('book') or ''}》"
+    return (parts[0] + "：" + " ".join(parts[1:])) if len(parts) > 1 else parts[0]
+
+
+def find_cover(out_path, img_dir=None):
+    """封面放在输出目录根（封面.webp / cover.jpg …），也认 --img-dir 上一层。"""
+    dirs = []
+    if out_path:
+        dirs.append(os.path.dirname(os.path.abspath(out_path)))
+    if img_dir:
+        dirs.append(os.path.dirname(os.path.abspath(img_dir)))
+    for d in dict.fromkeys(dirs):
+        if not os.path.isdir(d):
+            continue
+        for fn in sorted(os.listdir(d)):
+            stem, ext = os.path.splitext(fn)
+            if stem in ("封面", "cover") and ext.lower() in (".webp", ".png", ".jpg", ".jpeg"):
+                return fn
+    return ""
+
 
 def clean(text):
     if text is None:
@@ -68,13 +149,15 @@ def find_img(img_dir, name, idx):
     return ""
 
 
-def render(data, img_dir=None, images=True):
+def render(data, img_dir=None, images=True, cover=""):
     bm = data.get("book_meta") or {}
     book = bm.get("title") or data.get("book", "")
-    out = [f"# 《{book}》", ""]
+    out = [f"# {headline_of(data)}", ""]
+    if cover and images:
+        out += [f"![封面]({cover})", ""]
 
     # ---- 书况（清风开头那五行）----
-    meta_bits = []
+    meta_bits = [f"《{book}》"] if book else []
     if bm.get("author"):
         meta_bits.append(f"作者：{bm['author']}")
     if bm.get("word_count"):
@@ -89,10 +172,12 @@ def render(data, img_dir=None, images=True):
     genre = bm.get("genre")
     if isinstance(genre, list):
         genre = " ".join(str(g) for g in genre if g)
-    for label, val in (("题材", genre), ("状态", bm.get("status")),
-                       ("平台", bm.get("platform"))):
-        if clean(val):
-            out.append(f"**{label}：{clean(val)}**")
+    # 三行挤成一行：md 里连续单换行会被并成一段，反而更乱；用 ｜ 分隔与上一行同版式
+    tri = [f"**{label}：{clean(val)}**" for label, val in
+           (("题材", genre), ("状态", bm.get("status")), ("平台", bm.get("platform")))
+           if clean(val)]
+    if tri:
+        out.append(" ｜ ".join(tri))
     out.append("")
 
     # ---- 评分（8 维）----
@@ -268,16 +353,28 @@ def main():
     ap.add_argument("--json", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--img-dir", help="人物图目录；给了就在人物段落下方插图")
+    ap.add_argument("--cover", help="封面图（相对 --out 目录的路径优先）；不给就自动找 封面/cover.*")
     ap.add_argument("--no-images", action="store_true")
     a = ap.parse_args()
     data = json.load(open(a.json, encoding="utf-8"))
-    md = render(data, a.img_dir, images=not a.no_images)
+    cover = ""
+    if not a.no_images:
+        if a.cover:
+            cover = a.cover
+        else:
+            cover = find_cover(a.out, a.img_dir)
+    md = render(data, a.img_dir, images=not a.no_images, cover=cover)
     with open(a.out, "w", encoding="utf-8", newline="\n") as f:
         f.write(md)
     miss = [k for k in ("ratings", "blurb", "dimension_reviews") if not data.get(k)]
     if not (data.get("male_protagonist") or {}).get("name"):
         miss.append("male_protagonist")
+    bm = data.get("book_meta") or {}
+    if not bm.get("headline") and not bm.get("headline_tags"):
+        miss.append("headline_tags（标题只剩结算词+题材，缺四字卖点）")
     print(f"[OK] {a.out} ({len(md)} chars)" + (f"  [WARN] 缺 {', '.join(miss)}" if miss else ""))
+    print(f"     标题：{headline_of(data)}")
+    print(f"     封面：{cover or '（无，可用 pick_cover.py 抽一张）'}")
 
 
 if __name__ == "__main__":
