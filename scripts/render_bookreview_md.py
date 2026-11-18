@@ -135,10 +135,6 @@ def first_sent(s):
     return parts[0].strip() if parts else s
 
 
-def join_sent(*parts):
-    return "".join(endp(p) for p in parts if clean(p))
-
-
 def find_img(img_dir, name, idx):
     if not img_dir or not os.path.isdir(img_dir):
         return ""
@@ -147,6 +143,45 @@ def find_img(img_dir, name, idx):
         if fn.lower().endswith((".webp", ".png", ".jpg")) and safe in fn:
             return "人物图/" + fn
     return ""
+
+
+def split_paragraphs(text, target=170, hard=260):
+    """把长段落按句末标点拆成几段，**一个字符都不增删**（只加空行）。
+
+    为什么需要：identity/appearance/arc 拼起来常是 500 字一坨，手机上一屏全是字。
+    拆段只在句号/问号/叹号后断，且只在超过 hard 字时才拆，短字段不动。
+    """
+    s = clean(text)
+    if not s:
+        return []
+    if len(s) <= hard:
+        return [s]
+    sents = [p for p in re.split(r"(?<=[。！？])", s) if p.strip()]
+    paras, cur = [], ""
+    for sn in sents:
+        if cur and len(cur) + len(sn) > target:
+            paras.append(cur)
+            cur = sn
+        else:
+            cur += sn
+    if cur:
+        paras.append(cur)
+    return paras
+
+
+def cell(s):
+    """表格单元格：竖线会让表格塌掉，转义一下。"""
+    return clean(s).replace("|", "\\|")
+
+
+def emit_paras(out, text, label=None, target=170, hard=260):
+    """输出若干段落；label 只加在第一段前，最后一段补句末标点（与原版拼接口径一致）。"""
+    paras = split_paragraphs(text, target=target, hard=hard)
+    for i, seg in enumerate(paras):
+        if i == len(paras) - 1:
+            seg = endp(seg)
+        out += [f"**{label}**：{seg}" if (label and i == 0) else seg, ""]
+    return out
 
 
 def render(data, img_dir=None, images=True, cover=""):
@@ -180,23 +215,22 @@ def render(data, img_dir=None, images=True, cover=""):
         out.append(" ｜ ".join(tri))
     out.append("")
 
-    # ---- 评分（8 维）----
+    # ---- 评分（8 维）：档位与依据同表，别让读者来回对照 ----
     ratings = data.get("ratings") or {}
     if ratings:
-        out += ["## 评分", "", "| 维度 | 档位 |", "|---|---|"]
+        def grade_of_one(v):
+            return clean(v.get("grade", "")) if isinstance(v, dict) else str(v)
+
+        def reason_of_one(v):
+            return clean(v.get("reason", "")) if isinstance(v, dict) else ""
+
+        out += ["## 评分", "", "| 维度 | 档位 | 依据 |", "|:---|:---:|---|"]
         keys = [k for k in GRADE_ORDER if k in ratings] + \
                [k for k in ratings if k not in GRADE_ORDER]
         for k in keys:
             v = ratings[k]
-            grade = v.get("grade", "") if isinstance(v, dict) else str(v)
-            out.append(f"| {k} | **{clean(grade)}** |")
+            out.append(f"| {k} | **{grade_of_one(v)}** | {cell(reason_of_one(v)) or '—'} |")
         out.append("")
-        reasons = [(k, clean(v.get("reason", ""))) for k, v in ratings.items()
-                   if isinstance(v, dict) and clean(v.get("reason", ""))]
-        if reasons:
-            for k, r in reasons:
-                out.append(f"- {k}：{r}")
-            out.append("")
         out.append("> 评分为阅读主观判断，非原文事实；事实性结论见下方排雷与人物依据。")
         out.append("")
 
@@ -208,34 +242,29 @@ def render(data, img_dir=None, images=True, cover=""):
         if isinstance(blurb, str):
             blurb = [blurb]
         for p in blurb:
-            p = clean(p)
-            if p:
-                out += [p, ""]
+            for seg in split_paragraphs(p, target=220, hard=320):
+                out += [seg, ""]
 
     # ---- 男主 ----
     male = data.get("male_protagonist") or {}
     if male.get("name"):
-        out += ["## 男主", ""]
+        out += ["## 男主", "", f"### {male['name']}", ""]
         arc = clean(male.get("arc") or male.get("growth"))
         ident = clean(male.get("identity"))
         if arc:
             # arc 本身就是「开局身份→起势→终局」，identity 再写一遍会整段重复
-            out += [f"**{male['name']}**", "", endp(arc), ""]
-        else:
-            para = (f"**{male['name']}**，" + endp(ident)) if ident else f"**{male['name']}**"
-            out += [para, ""]
-        extra = []
+            emit_paras(out, arc)
+        elif ident:
+            emit_paras(out, ident)
         if not arc and ident:
-            extra.append(f"- **身份**：{ident}")
+            out += [f"**身份**：{endp(first_sent(ident))}", ""]
         if clean(male.get("appearance")):
-            extra.append(f"- **外貌**：{clean(male['appearance'])}")
+            out += [f"**外貌**：{endp(male['appearance'])}", ""]
         if clean(male.get("personality")):
-            extra.append(f"- **性格**：{clean(male['personality'])}")
-        if extra:
-            out += extra + [""]
+            out += [f"**性格**：{endp(male['personality'])}", ""]
         sl = male.get("signature_line")
         if isinstance(sl, dict) and clean(sl.get("quote", "")):
-            out.append(f"> 名场面：「{clean(sl['quote'])}」"
+            out.append(f"> **名场面**：「{clean(sl['quote'])}」"
                        + (f" —— {clean(sl.get('scene',''))}" if clean(sl.get("scene", "")) else ""))
             out.append("")
         if images:
@@ -252,42 +281,48 @@ def render(data, img_dir=None, images=True, cover=""):
             ident = clean(c.get("identity"))
             if arc:
                 ident = first_sent(ident)
-            body = join_sent(ident, c.get("appearance"))
+            # 序号写进标题文本，不用 md 有序列表语法：
+            # 列表项之间夹空行与图片段落会被渲染器判成新列表，全部重新显示为 1。
+            out += [f"### {i}. {c.get('name','')}", ""]
+            if ident:
+                out += [f"**身份**：{endp(ident)}", ""]
+            if clean(c.get("appearance")):
+                out += [f"**外貌**：{endp(c['appearance'])}", ""]
             if arc:
-                body += endp(arc)
+                emit_paras(out, arc, label="经历")
             else:
                 ev = [clean(e.get("event") or e.get("text") or "" if isinstance(e, dict) else e)
                       for e in (c.get("key_events") or [])]
                 ev = [e for e in ev if e]
                 if ev:
-                    body += "经历：" + "→".join(ev) + "。"
+                    out += [f"**经历**：{'→'.join(ev)}。", ""]
             pur = c.get("purity") or {}
             if clean(pur.get("verdict")):
-                body += f"纯洁度结论：{clean(pur['verdict'])}。"
-            # 序号写进标题文本，不用 md 有序列表语法：
-            # 列表项之间夹空行与图片段落会被渲染器判成新列表，全部重新显示为 1。
-            out += [f"### {i}. {c.get('name','')}", ""]
-            if body:
-                out.append(body)
-                out.append("")
+                out += [f"**纯洁度结论**：{endp(pur['verdict'])}", ""]
             tags = c.get("personality_tags")
             if isinstance(tags, list) and tags:
-                out.append(f"性格特点：{'、'.join(clean(t) for t in tags if clean(t))}")
+                out += [f"**性格特点**：{'、'.join(clean(t) for t in tags if clean(t))}", ""]
             elif clean(c.get("personality")):
-                out.append(f"性格特点：{clean(c['personality'])}")
+                out += [f"**性格特点**：{clean(c['personality'])}", ""]
             sl = c.get("signature_line")
             if isinstance(sl, dict) and clean(sl.get("quote", "")):
-                out.append(f"名场面：「{clean(sl['quote'])}」"
+                out.append(f"> **名场面**：「{clean(sl['quote'])}」"
                            + (f" —— {clean(sl.get('scene',''))}" if clean(sl.get("scene", "")) else ""))
-            out.append("")
+                out.append("")
             if images:
                 p = find_img(img_dir, c.get("name", ""), i)
                 if p:
                     out += [f"![{c.get('name','')}]({p})", ""]
 
-    # ---- 其他角色 ----
+    # ---- 其他角色：成表的比一长串列表好扫 ----
     side = data.get("side_characters") or []
-    if side:
+    if side and all(isinstance(s, dict) for s in side):
+        out += ["## 其他角色", "", "| 角色 | 身份 | 一句话 |", "|:---|:---|:---|"]
+        for s in side:
+            out.append(f"| **{cell(s.get('name',''))}** | {cell(s.get('title','')) or '—'} "
+                       f"| {cell(s.get('note','')) or '—'} |")
+        out.append("")
+    elif side:
         out += ["## 其他角色", ""]
         for s in side:
             if isinstance(s, str):
@@ -300,7 +335,7 @@ def render(data, img_dir=None, images=True, cover=""):
             out.append(f"- {head}：{nt}" if nt else f"- {head}")
         out.append("")
 
-    # ---- 分维度点评 ----
+    # ---- 分维度点评：一段一标题，手机上一眼知道读到哪 ----
     dims = data.get("dimension_reviews") or []
     if dims:
         out += ["## 分维度点评", ""]
@@ -312,23 +347,24 @@ def render(data, img_dir=None, images=True, cover=""):
                 norm.append(("", clean(d)))
         norm.sort(key=lambda kv: DIM_ORDER.index(kv[0]) if kv[0] in DIM_ORDER else 99)
         for i, (t, txt) in enumerate(norm, 1):
-            head = f"**{i}.{t}**" if t else f"**{i}.**"
-            out += [f"{head}：{txt}" if txt else head, ""]
+            out += [f"### {i}. {t}" if t else f"### {i}", ""]
+            emit_paras(out, txt, target=220, hard=320)
 
-    # ---- 排雷 ----
+    # ---- 排雷：类别加粗独立成段，引文降到下一行做视觉证据 ----
     lei = data.get("book_leidian_summary") or []
     yu = data.get("book_yumen_summary") or []
     if lei or yu or data.get("characters"):
         out += ["## 排雷", ""]
         for title, items in (("雷点", lei), ("郁闷点", yu)):
-            out += [f"**{title}**", ""]
+            out += [f"### {title}", ""]
             if not items:
                 out += ["- 无（逐条核过，未成立）", ""]
                 continue
             for it in items:
                 q = clean(it.get("quote", ""))
-                out.append(f"- `{it.get('category','未归类')}` {clean(it.get('evidence',''))}"
-                           + (f" 「{q}」" if q else ""))
+                out.append(f"- **{clean(it.get('category','未归类'))}**：{clean(it.get('evidence',''))}")
+                if q:
+                    out.append(f"  > 「{q}」")
             out.append("")
 
     # ---- 数据说明 ----
