@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .DS_Store
 Thumbs.db
+
+# Word/WPS 打开文档时生成的锁文件，以及本地导出的 docx 副本（示例只保留 md 源）
+~$*
+examples/**/*.docx

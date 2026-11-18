@@ -9,8 +9,16 @@ https://latent.moe 文生图，落地到 <输出目录>/人物图/<角色名>.we
 用法：
   python gen_portraits.py --json <书名>_人物数据.json --out <输出目录> \
       [--only 曾柔,于紫彤] [--top 12] [--style anime|watercolor|realistic] \
-      [--resolution portrait] [--seed 1234] [--dry-run] \
+      [--resolution portrait] [--seed-mode name|random|fixed] [--seed-salt 0] \
+      [--seed 1234] [--dry-run] \
       [--latent <latent.py 路径>] [--key lat_sk_xxx]
+
+seed 策略（画风一致性的关键）：
+  同一角色、同一 prompt 只换 seed，就可能一张出九〇年代复古赛璐璐、一张出当代 anime。
+  - name  （默认）：按角色名派生固定 seed（sha256 前 13 位）。同一本书重跑出同一批图，
+          各角色构图又互不相同。整本想换一批就 --seed-salt N，仍可复现。
+  - random：每张随机（旧行为，适合探索）。
+  - fixed ：所有角色同一个 seed（旧 --seed 行为），构图会趋同，慎用。
 
 前提：
   - latent-media skill 已装好并且 keys.env 里有图像 key（lat_sk_ 开头）；
@@ -20,9 +28,11 @@ https://latent.moe 文生图，落地到 <输出目录>/人物图/<角色名>.we
 提示词约定（写进人物 JSON 的 appearance_prompt）：
   - 英文 Danbooru 风格 tag，逗号分隔，只写原文核验过的外形事实；
   - 不写剧情、不写心理、不写"气质高贵"这类无法画出来的词；
+  - 不要写 `realistic` / `photorealistic`（本画风的负向词里有），脚本会剔除并告警；
   - 本脚本会自动补：人数/构图/画风/画质 tag 与负向词。
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -90,7 +100,20 @@ def dedupe(tags):
     return out
 
 
+def neg_set(style):
+    """负向词集合（拆成一个个 tag），用来查正向里有没有自相矛盾的词。"""
+    _, style_neg = STYLE[style]
+    raw = ",".join([BASE_NEG] + style_neg)
+    return {t.strip().lower() for t in raw.split(",") if t.strip()}
+
+
 def build_prompt(ch, style, male=False, artist=DEFAULT_ARTIST):
+    """返回 (正向, 负向, 被丢掉的自相矛盾 tag)。
+
+    第三项是画风漂移的头号原因：角色自己的 appearance_prompt 里写了
+    `realistic` / `photorealistic`，而这些词正好在本画风的负向列表里——
+    同一 tag 既正向又负向，模型只能掷硬币，出图就会一半赛璐璐一半写实。
+    """
     own = [t.strip() for t in re.split(r"[,，]", (ch.get("appearance_prompt") or "")) if t.strip()]
     style_pos, style_neg = STYLE[style]
     base = list(BASE_POS_MALE if male else BASE_POS)
@@ -98,15 +121,32 @@ def build_prompt(ch, style, male=False, artist=DEFAULT_ARTIST):
     for k, rivals in AGE_TAGS.items():
         if k in base and any(r in low for r in rivals):
             base.remove(k)
+    nset = neg_set(style)
+    kept, dropped = [], []
+    for t in own:
+        # 整词比对，避免 `realistic` 把 `realistic eyes` 这类子串误伤
+        if t.strip().lower() in nset:
+            dropped.append(t)
+        else:
+            kept.append(t)
     art = [artist] if artist and artist.lower() not in ("none", "no") else []
-    tags = dedupe(art + base + own + style_pos)
+    tags = dedupe(art + base + kept + style_pos)
     neg = list(dedupe([BASE_NEG] + style_neg))
     if art:
         # 「artist name」是防签名的负向词，但指定画师时会把画风一起压掉
         neg = [t for t in neg if t not in ("artist name", "copyright name")]
     if male:
         neg = [t for t in neg if t not in ("multiple girls",)] + ["multiple girls", "female focus"]
-    return ", ".join(tags), ", ".join(dedupe(neg))
+    return ", ".join(tags), ", ".join(dedupe(neg)), dropped
+
+
+def name_seed(name, salt=0):
+    """由角色名派生固定种子：同一本书重跑出同一批图，不同角色构图互不相同。
+
+    取 sha256 前 13 位十六进制（≤4.5e15），落在 latent 已验证可用的整数范围内。
+    """
+    h = hashlib.sha256(("%s|%s" % (salt, name)).encode("utf-8")).hexdigest()
+    return int(h[:13], 16)
 
 
 def safe_name(s):
@@ -145,7 +185,12 @@ def main():
                     help="画师 tag（默认 morikura_en；传 none 关掉）")
     ap.add_argument("--resolution", default="portrait",
                     choices=["square", "portrait", "landscape"])
-    ap.add_argument("--seed", type=int, help="固定种子（所有角色同一 seed 会让构图趋同，慎用）")
+    ap.add_argument("--seed", type=int, help="固定种子（配 --seed-mode fixed；所有角色同一 seed 会让构图趋同，慎用）")
+    ap.add_argument("--seed-mode", default="name", choices=["name", "random", "fixed"],
+                    help="name=按角色名派生（默认，重跑可复现且各角色构图不同）；"
+                         "random=每张随机；fixed=用 --seed 一刀切")
+    ap.add_argument("--seed-salt", type=int, default=0,
+                    help="配 --seed-mode name：换个 salt 等于整本重摇一次，仍可复现")
     ap.add_argument("--steps", type=int, default=12)
     ap.add_argument("--dry-run", action="store_true", help="只打印提示词，不调接口")
     ap.add_argument("--reindex", action="store_true",
@@ -181,7 +226,9 @@ def main():
                    if f.endswith(".webp") and safe_name(name) in f]
             if not hit:
                 continue
-            prompt, _ = build_prompt(ch, a.style, male=(name == male_name), artist=a.artist)
+            prompt, _, dropped = build_prompt(ch, a.style, male=(name == male_name), artist=a.artist)
+            if dropped:
+                print("  [warn] %s 的 appearance_prompt 含与画风负向词冲突的 tag：%s" % (name, dropped))
             index.append({"name": name, "file": sorted(hit)[0], "seed": None,
                           "artwork_id": None, "prompt": prompt})
         idx_path = os.path.join(img_dir, "_图片索引.json")
@@ -198,12 +245,21 @@ def main():
         if not (ch.get("appearance_prompt") or "").strip():
             print("[SKIP] %s：没有 appearance_prompt（先让子代理按模板三写）" % name)
             continue
-        prompt, negative = build_prompt(ch, a.style, male=(name == male_name), artist=a.artist)
+        prompt, negative, dropped = build_prompt(ch, a.style, male=(name == male_name),
+                                                artist=a.artist)
         print("\n[%d/%d] %s" % (i, len(chars), name))
+        if dropped:
+            print("  [warn] 丢掉与画风负向词冲突的 tag：%s（改 appearance_prompt 时换个说法）"
+                  % ", ".join(dropped))
         print("  prompt: %s" % prompt)
         if a.dry_run:
             continue
-        seed = a.seed
+        if a.seed_mode == "fixed":
+            seed = a.seed if a.seed is not None else name_seed(name, a.seed_salt)
+        elif a.seed_mode == "name":
+            seed = name_seed(name, a.seed_salt)
+        else:
+            seed = None
         rank = ch.get("importance_rank")
         rank = i if rank is None else rank
         out_path = os.path.join(img_dir, "%02d_%s.webp" % (rank, safe_name(name)))

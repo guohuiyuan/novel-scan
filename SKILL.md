@@ -155,9 +155,13 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
    ```bash
    python <skill>/scripts/gen_portraits.py --json <人物数据.json> --out <输出目录> \
        --style anime --artist morikura_en   # anime | watercolor | realistic
+       # seed 默认按角色名派生（可复现）；要整本重摇加 --seed-salt 1
    ```
    - `--artist` 默认 `morikura_en`（森仓円：干净通透的萌系上色），放在角色 tag 之前；**指定画师时脚本会自动从负向词里去掉 `artist name` / `copyright name`**，否则两者打架、画风被压平。传 `--artist none` 关掉。
-   - 画师风格偏好特写：`upper body + portrait` 在 morikura_en 下会出到胸像，做视频封面够用；要更远就删 `portrait` tag。不同角色之间画风会有代际差异（同一 tag 也可能出老动画风），介意就固定 seed 或统一重出。
+   - 画师风格偏好特写：`upper body + portrait` 在 morikura_en 下会出到胸像，做视频封面够用；要更远就删 `portrait` tag。
+   - **画风统一与 seed（2026-11-18 实测）**：画风由「画师 tag + 公共构图/画质 tag + 同一套负向词」锚定，三者对全部角色一致；**真正导致同批图风格漂移的是 seed**——同一角色、同一 prompt，只换 seed 就能一张出九〇年代复古赛璐璐、一张出当代 anime。故 `--seed-mode` 默认 `name`：**按角色名派生固定 seed**（`name_seed()`，sha256 前 13 位），同一本书重跑出同一批图、各角色构图又互不相同；整本想重摇换 `--seed-salt N`（仍可复现）；只想随机探索用 `--seed-mode random`。`--seed-mode fixed --seed 1234` 是旧行为，会让 12 张构图趋同，慎用。索引里逐张记下真实 seed，任何一张都能单独复现。
+   - **正负向词冲突会静默毁掉画风**：角色 `appearance_prompt` 里若写了 `realistic` / `photorealistic`（常见于原文写「写实」「真实感」），而它们正好在本画风的负向列表里，同一 tag 既正向又负向，出图就在两种风格间掷硬币。`build_prompt()` 现在会**自动剔除**这类 tag 并打印 `[warn]`——看到 warn 就把那句话换个说法（如「写实」→ `detailed face`），别留着让模型猜。
+   - 一键成组的自检：12 张出完后拼联系表目检（`PIL` 六列拼图），**逐张看线条粗细/上色方式/脸部比例是否同代**；有一张特立独行就 `--only <名> --seed-salt N` 单张重摇。
    - 喂给模型的是 JSON 里的 `appearance_prompt`（英文 tag），脚本自动补构图/画风/画质 tag 与负向词；产物落 `<输出目录>/人物图/<rank>_<角色名>.webp`（男主 `<00>_<名>`），索引写 `人物图/_图片索引.json`（含 prompt、seed、名场面台词）。
    - `--only 曾柔,于紫彤` 只出指定角色；`--no-male` 不画男主；`--dry-run` 先看提示词不花额度；`--reindex` 断点续跑后按现有图片重建索引。
    - **出图规矩（实测踩过的坑）**：`appearance_prompt` 只写**腰部以上**能看到的东西（发色/发型、瞳色、肤质、脸型、上衣、领口、耳颈饰品）——一旦写了裤、裙长、鞋、腿、身高，模型必然拉成全身照；**一套衣服 + 一个表情**，别把她在全书穿过的都列上；发色用明确词（`jet black hair` / `dark brown hair`），否则会偏绿偏蓝；男主的 tag 里不要写 `1girl`（脚本会换成 `1boy`）。

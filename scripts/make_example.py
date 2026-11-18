@@ -125,6 +125,26 @@ def copy_intermediates(src, dst, pick_char=None):
     return made
 
 
+def clean_owned(dst):
+    """只删本脚本自己会写的东西。
+
+    以前直接 rmtree(dst)，把人工写的 README.md、导出的 书评.docx 一起删了。示例目录
+    是"交付 + 人工补充"混住的，只清自己产出的那几类，其它文件原样留着。
+    """
+    removed = []
+    for pat in ("*_书评.md", "*_人物卡.md", "*_人物数据.json", "_封面.json", "封面.*"):
+        for p in glob.glob(os.path.join(dst, pat)):
+            if os.path.isfile(p):
+                os.remove(p)
+                removed.append(os.path.basename(p))
+    for sub in ("人物图", "中间产物样例"):
+        d = os.path.join(dst, sub)
+        if os.path.isdir(d):
+            shutil.rmtree(d)
+            removed.append(sub + "/")
+    return removed
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", required=True, help="某本书的输出目录")
@@ -140,26 +160,21 @@ def main():
         sys.exit("[example] 源和目标是同一个目录，拒绝执行")
 
     before = dir_size(a.src)
-    # 导读是人写的，重跑示例不能把它清掉：先留一份，重生后再写回
-    keep_readme = ""
-    readme = os.path.join(a.dst, "README.md")
-    if os.path.isfile(readme):
-        with open(readme, encoding="utf-8") as f:
-            keep_readme = f.read()
-    if os.path.isdir(a.dst):
-        shutil.rmtree(a.dst)
+    os.makedirs(a.dst, exist_ok=True)
+    kept = [f for f in sorted(os.listdir(a.dst))
+            if os.path.isfile(os.path.join(a.dst, f)) and f not in ("_封面.json",)
+            and not f.startswith(("封面.",)) and not f.endswith(("_书评.md", "_人物卡.md", "_人物数据.json"))]
+    clean_owned(a.dst)
     made = copy_deliverables(a.src, a.dst, a.max_width, a.quality)
     if not a.no_intermediates:
         made += copy_intermediates(a.src, a.dst)
-    if keep_readme:
-        with open(readme, "w", encoding="utf-8", newline="\n") as f:
-            f.write(keep_readme)
-        made.append("README.md（沿用原有导读，未覆盖）")
     after = dir_size(a.dst)
 
     print(f"[example] {a.dst}")
     for m in made:
         print(f"   + {m}")
+    if kept:
+        print(f"   = 原样保留 {len(kept)} 个非脚本产物：{', '.join(kept)}")
     print(f"[example] 体积 {human(before)} → {human(after)}（图片限宽 {a.max_width}px / q{a.quality}）")
     if after > 3 * 1024 * 1024:
         print("[example] [WARN] 超过 3MB，建议调小 --max-width 或 --quality")
