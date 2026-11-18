@@ -13,6 +13,22 @@ description: |
 
 核心原则：**线索 ≠ 事实**。脚本只负责"把可能相关的地方挑出来"，判断与写作只写自己读到/核对过的内容。**成品正文不写行号**（阅读界面无法跳转），用 ≤50 字原文引文定位；行号只进笔记与清洗记录。
 
+## 成品长什么样（动手前先看样例）
+
+`<skill>/examples/都市良人行/` 是一本 111 万字 txt 跑完的**完整真实产物**（图片已降采样，全目录 856KB）：
+
+| 看什么 | 打开 |
+|---|---|
+| 主交付物长什么样：标题 + 封面 + 书况 + 8 维评分 + 简介 + 男主 + 11 位女主逐条 + 分维度点评 + 排雷 | `examples/都市良人行/都市良人行_书评.md` |
+| 备查卡片的字段密度（身份/别名/外貌原文/纯洁度四维/雷点/名场面） | `examples/都市良人行/都市良人行_人物卡.md` |
+| JSON 真实字段名与层级（拼装/渲染脚本按它取值） | `examples/都市良人行/都市良人行_人物数据.json` |
+| `appearance_prompt` 到底写成什么样、以及每张图的 prompt/seed 溯源 | `examples/都市良人行/人物图/_图片索引.json` |
+| 子代理该交什么格式（角色片段 / 分块笔记） | `examples/都市良人行/中间产物样例/` |
+
+那次的审计结果：引文 81/81 逐字命中、12/12 角色有外貌、12/12 有名场面台词、8/8 评分齐全、行号残留 0——**当你的输出达不到这个水平，是流程漏了步骤，不是书的问题**。
+
+想给自己的输出也留一份展示副本：`python <skill>/scripts/make_example.py --src <输出目录> --dst examples/<书名>`（抄交付物 + 人物图降采样 + 抽一份中间产物）。
+
 ## 环境约定（本 skill 与具体机器解耦）
 
 - **原文 txt**：由使用者在对话中提供路径，或放入工作区约定的 `novels/` 目录；skill 不依赖固定盘符。
@@ -107,7 +123,7 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
 - 字数/章数/卷数可留空，`assemble_json.py` 会从 `_prescan/state.json` 自动补；但**预扫检测到重复收录时必须以 book_info.json 为准**（见下）。
 
 ### D. 组装交付（主代理，三件套 + 图）
-0. **合并片段**：`python <skill>/scripts/assemble_json.py --dir <输出目录>/json --book <书名> --out <书名>_人物数据.json --meta <输出目录>/book_info.json --source "<原文文件名>"`——按 `importance_rank` 排序、并入书级字段与男主卡、聚合全书级雷点/郁闷点，并点名缺 `appearance_prompt` / `signature_line` / 书级字段的角色。
+0. **合并片段**：`python <skill>/scripts/assemble_json.py --dir <输出目录>/json --book <书名> --out <书名>_人物数据.json --meta <输出目录>/book_info.json --source "<原文文件名>"`——按 `importance_rank` 排序、并入书级字段与男主卡、聚合全书级雷点/郁闷点，并点名缺 `appearance_prompt` / `signature_line` / 书级字段的角色。**排序后脚本会把女主 rank 压平成 1..N（男主固定 0，出图是 `00_男主.webp`）**：子代理各打各的分，实测一本 11 位女主给出 `[1,2,2,3,3,4,4,5,5,6,7]`，不压平就会空号/撞号（曾出现 2..12、缺 01，看着像漏人）。
 1. **人物数据 JSON**：顶层 `book/book_meta/generated_at/source/male_protagonist/characters[]/ratings/blurb/dimension_reviews/side_characters/coverage/book_leidian_summary[]/book_yumen_summary[]`。
 2. **扫书稿（主交付物）**：先 roll 一张封面，再渲染。
    ```bash

@@ -1,0 +1,20 @@
+{
+ "file": "封面.webp",
+ "source": "latent.moe 公开图库（resolve，仅 SFW；按排位随机，非热度排序）",
+ "tags": [
+  "1girl",
+  "solo",
+  "portrait"
+ ],
+ "rank": 982,
+ "nsfw": false,
+ "width": 832,
+ "height": 1216,
+ "model": "anima-base-v1.0",
+ "view_count": 2,
+ "artwork_id": "5b46ed45-334e-4d84-b643-efae83c8d70a",
+ "artwork_url": "https://latent.moe/art/5b46ed45-334e-4d84-b643-efae83c8d70a",
+ "content_type": "image/webp",
+ "bytes": 163004,
+ "picked_at": "2026-11-18 19:41"
+}

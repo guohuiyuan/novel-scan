@@ -155,9 +155,16 @@ def main():
                                   "arc": m.get("arc", ""), "quotes": m.get("quotes", [])})
             chars = [c for c in chars if c.get("name") != a.male]
 
+    # 重新编号：女主从 1 起连续编号，男主固定占 0（出图是 00_男主.webp）。
+    # 子代理各自填 importance_rank，必然出现重复值与空号（实测一次 2..12、缺 01），
+    # 图片文件名跟着 rank 走，空号会让人以为漏了角色——所以这里强制压平。
     chars.sort(key=lambda c: (c.get("importance_rank", 999), c.get("name", "")))
+    before = [c.get("importance_rank") for c in chars]
     for i, c in enumerate(chars, 1):
-        c["importance_rank"] = i + (1 if male else 0)
+        c["importance_rank"] = i
+    if before and before != list(range(1, len(before) + 1)):
+        print(f"[assemble] 子代理给的 rank 有重复/空号（{before}），已压平为 1..{len(chars)}；"
+              f"人物图文件名会跟着变，重新出图或改名后**必须重渲染文档**")
 
     out = {
         "book": a.book,
