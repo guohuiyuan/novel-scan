@@ -1,0 +1,7 @@
+# 本地项目数据（WorkBuddy 工作区记忆、临时产物），不进仓库
+.workbuddy/
+novel-scan-results/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
