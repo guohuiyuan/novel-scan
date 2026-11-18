@@ -416,8 +416,10 @@ def render(data, img_dir=None, images=True, cover=""):
                 out += [f"**{label}**", ""]
                 for it in items:
                     q = clean(it.get("quote"))
+                    # 角色自己的条目里保留原代词：标题就是人名，「还关雅妮自由，她平静地……」这种
+                    # 同一个名字出现两遍反而别扭；换名只在跨角色的汇总列表里做（见 leiyu_items）。
                     out.append(f"- **{clean(it.get('category')) or '未归类'}**："
-                               f"{clean(named_evidence(it.get('evidence'), c.get('name', '')))}")
+                               f"{clean(it.get('evidence'))}")
                     if q:
                         out.append(f"  > 「{q}」")
                 out.append("")

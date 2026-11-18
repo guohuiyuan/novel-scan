@@ -164,6 +164,14 @@ def main():
     kept = [f for f in sorted(os.listdir(a.dst))
             if os.path.isfile(os.path.join(a.dst, f)) and f not in ("_封面.json",)
             and not f.startswith(("封面.",)) and not f.endswith(("_书评.md", "_人物卡.md", "_人物数据.json"))]
+    # Office 打开文档时留的 `~$xxx.docx` 锁文件：不是产物，纯垃圾，顺手清掉
+    for f in kept[:]:
+        if f.startswith("~$"):
+            try:
+                os.remove(os.path.join(a.dst, f))
+            except OSError:
+                pass
+            kept.remove(f)
     clean_owned(a.dst)
     made = copy_deliverables(a.src, a.dst, a.max_width, a.quality)
     if not a.no_intermediates:
