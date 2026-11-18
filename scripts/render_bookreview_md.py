@@ -24,6 +24,11 @@ import re
 GRADE_ORDER = ["情节", "文笔", "感情", "车速", "人物刻画", "新意", "压抑度", "总评"]
 DIM_ORDER = ["剧情方面", "女主方面", "车技方面", "设定方面", "缺点方面"]
 
+# 纯洁度四维：书评里必须逐项列出，不能只写「全初」——读者要知道初在哪里
+PURITY_KEYS = [("chu", "处"), ("jingshen_chu", "精神初"), ("hunyin", "初婚"), ("chumo", "初摸")]
+PURITY_ICON = {"非处": "❌", "精神初": "✅", "非初": "❌", "有婚史婚约": "❌", "被非男主触碰": "❌",
+               "处": "✅", "初婚": "✅", "初摸": "✅", "初": "✅", "不适用": "➖", "未知": "❓"}
+
 # 总评档位 → 扫书帖的"粮草"结算词（清风体系：神作 > 仙草 > 粮草 > 干粮 > 毒草）
 SETTLE_WORD = {"S": "神作", "S-": "神作", "A+": "仙草", "A": "仙草", "A-": "仙草",
                "B+": "粮草", "B": "粮草", "B-": "粮草",
@@ -133,6 +138,25 @@ def first_sent(s):
         return ""
     parts = [p for p in re.split(r"(?<=[。！？])", s) if p.strip()]
     return parts[0].strip() if parts else s
+
+
+def purity_line(pur):
+    """纯洁度四维逐项：处 ｜ 精神初 ｜ 初婚 ｜ 初摸 —— 总结论。
+
+    只写「全初」等于把四维压成一维：读者看不出是处女、还是没精神出轨、还是没婚史。
+    缺项一律记「未知」（不默认全初），全缺时返回空串，调用方退回只写结论。
+    """
+    if not any(str((pur or {}).get(k) or "").strip() for k, _ in PURITY_KEYS):
+        return ""
+    vals = [str(pur.get(k) or "未知").strip() for k, _ in PURITY_KEYS]
+    if all(v.startswith("未知") for v in vals):
+        return "未知"          # 四维全无证据，逐项列四个 ❓ 只是噪音
+    parts = []
+    for (k, label), v in zip(PURITY_KEYS, vals):
+        icon = next((PURITY_ICON[key] for key in PURITY_ICON if v.startswith(key)), "❓")
+        parts.append(f"{label} {icon}")
+    verdict = clean(pur.get("verdict"))
+    return " ｜ ".join(parts) + (f" —— **{verdict}**" if verdict else "")
 
 
 def find_img(img_dir, name, idx):
@@ -297,7 +321,10 @@ def render(data, img_dir=None, images=True, cover=""):
                 if ev:
                     out += [f"**经历**：{'→'.join(ev)}。", ""]
             pur = c.get("purity") or {}
-            if clean(pur.get("verdict")):
+            pl = purity_line(pur)
+            if pl:
+                out += [f"**纯洁度**：{pl}", ""]
+            elif clean(pur.get("verdict")):
                 out += [f"**纯洁度结论**：{endp(pur['verdict'])}", ""]
             tags = c.get("personality_tags")
             if isinstance(tags, list) and tags:

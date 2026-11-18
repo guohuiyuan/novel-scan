@@ -215,6 +215,30 @@ def main():
     walk(data)
     spans = list(dict.fromkeys(spans))
     label = [s for s in spans if not hit(s)]
+    # ---- 2e) 纯洁度四维 ----
+    print("\n== 2e. 纯洁度四维（处 / 精神初 / 初婚 / 初摸）==")
+    PKEYS = [("chu", "处"), ("jingshen_chu", "精神初"),
+             ("hunyin", "初婚"), ("chumo", "初摸")]
+    chars_all = list(data.get("characters") or [])
+    if (mp or {}).get("purity"):
+        chars_all = chars_all + [dict(mp, name=mp.get("name", "男主"))]
+    full, partial, blank = 0, [], []
+    for c in chars_all:
+        pur = c.get("purity") or {}
+        got = [lab for k, lab in PKEYS if str(pur.get(k) or "").strip()]
+        if not got:
+            blank.append(c.get("name", "?"))
+        elif len(got) < 4:
+            lack_lab = [lab for k, lab in PKEYS if not str(pur.get(k) or "").strip()]
+            partial.append(f"{c.get('name','?')}（缺 {'、'.join(lack_lab)}）")
+        else:
+            full += 1
+    print(f"   四维齐全：{full}/{len(chars_all)}" + ("  ✅" if full == len(chars_all) else ""))
+    if partial:
+        print(f"   [缺失] {'；'.join(partial)} —— 四项必须逐项给值，缺项写「未知」")
+    if blank:
+        print(f"   [缺失] {'、'.join(blank)} 连一维都没有，只有 verdict；书评会退化成只写「全初」")
+
     print(f"\n== 3. 元数据「」标签抽查 ==")
     print(f"   共 {len(spans)} 条，未逐字命中 {len(label)} 条（多为指代性标签/概括，非引文主张）")
     for s in label[:25]:
