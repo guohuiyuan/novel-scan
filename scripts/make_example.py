@@ -140,11 +140,21 @@ def main():
         sys.exit("[example] 源和目标是同一个目录，拒绝执行")
 
     before = dir_size(a.src)
+    # 导读是人写的，重跑示例不能把它清掉：先留一份，重生后再写回
+    keep_readme = ""
+    readme = os.path.join(a.dst, "README.md")
+    if os.path.isfile(readme):
+        with open(readme, encoding="utf-8") as f:
+            keep_readme = f.read()
     if os.path.isdir(a.dst):
         shutil.rmtree(a.dst)
     made = copy_deliverables(a.src, a.dst, a.max_width, a.quality)
     if not a.no_intermediates:
         made += copy_intermediates(a.src, a.dst)
+    if keep_readme:
+        with open(readme, "w", encoding="utf-8", newline="\n") as f:
+            f.write(keep_readme)
+        made.append("README.md（沿用原有导读，未覆盖）")
     after = dir_size(a.dst)
 
     print(f"[example] {a.dst}")
