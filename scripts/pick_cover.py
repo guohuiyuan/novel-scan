@@ -6,6 +6,14 @@ novel-scan: pick_cover.py —— 从 latent.moe 公开图库里**挑**一张现�
 注意：**这是挑图，不是生图**。走公开图库的 `resolve` 接口，取的是别人已发布的作品，
 不调用 `generate`、不写 prompt、不花出图额度、无需 API key，秒级返回。
 
+为什么是"按排位随机"而不是"从最多浏览的前100取"：
+  服务端按 `rank`（1-1000）分页，**没有按浏览量排序的接口**——`sort=views` / `orderBy=viewCount`
+  都被静默忽略，`/api/v1/images`、`/images/popular` 都是 404。
+  而且 rank 与热度无关：实测同一标签组合 rank 1-100 平均浏览 3.1、rank 901-1000 平均 3.0，
+  属于同一分布；图库里浏览量普遍只有个位数（大量私有上传），"最热"本身没什么区分度。
+  所以要按浏览量取前 100，只能把 1000 张全扫一遍（实测约 2.5 分钟），为一个封面不值得。
+  结论：按排位随机抽，抽完**目检**，不像样就换 seed 重抽——一次不到 1 秒。
+
 为什么单独一个脚本：
   - 书评（公众号体例）第一屏是「标题 + 封面」，封面不必与人物图同源，
     随手挑一张能立刻让整篇有成品感；人物图另走 gen_portraits.py（按 appearance_prompt
@@ -15,20 +23,22 @@ novel-scan: pick_cover.py —— 从 latent.moe 公开图库里**挑**一张现�
     `nsfw` 字段做一次硬校验，双保险。
 
 用法：
-  python pick_cover.py --out <输出目录>/封面.webp
-  python pick_cover.py --out 封面.webp --tags 1girl solo city --shape portrait
-  python pick_cover.py --out 封面.webp --json <人物数据.json>   # 用 book_meta.cover_tags
-  python pick_cover.py --out 封面.webp --rank 233              # 指定排位（可复现）
+  python pick_cover.py --out <输出目录>/封面.webp                       # 随机
+  python pick_cover.py --out 封面.webp --seed 22                        # 复现某一张
+  python pick_cover.py --out 封面.webp --json <人物数据.json>            # 用 book_meta.cover_tags
+  python pick_cover.py --out 封面.webp --rank 233                       # 指定排位
 
 产物：
-  <out>                 封面图（扩展名按 Content-Type 自动校正）
-  <out 同目录>/_封面.json  出处留痕（artwork id / 排位 / 标签 / 模型 / 尺寸 / 作品页 URL）
+  <out>                    封面图（扩展名按 Content-Type 自动校正）
+  <out 同目录>/_封面.json    出处留痕（artwork id / 排位 / 标签 / 模型 / 尺寸 / 浏览量 / 作品页 URL）
 """
 import argparse
+import datetime
 import json
 import os
 import random
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -39,24 +49,33 @@ RANK_MAX = 1000  # 服务端限制：rank must be an integer from 1 to 1000
 DEFAULT_TAGS = ["1girl", "solo", "portrait"]  # portrait 把池子从"随手涂"收窄到胸像/半身，当封面更像样
 
 
-def api(tags, rank=None, fmt="json"):
+def api(tags, rank=None, fmt="json", retry=2):
     q = [("tag", t) for t in tags]
     if rank:
         q.append(("rank", str(rank)))
     if fmt:
         q.append(("format", fmt))
     url = f"{BASE}/api/v1/images/resolve?{urllib.parse.urlencode(q, doseq=True)}"
-    req = urllib.request.Request(url, headers=UA)
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.load(r).get("data") or {}
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "ignore")
+    last = ""
+    for attempt in range(retry + 1):
         try:
-            err = json.loads(body)
-        except Exception:
-            err = {"error": body[:120]}
-        return {"_error": e.code, "_msg": err.get("message") or err.get("error") or ""}
+            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=45) as r:
+                return json.load(r).get("data") or {}
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", "ignore")
+            try:
+                err = json.loads(body)
+            except Exception:
+                err = {"error": body[:120]}
+            d = {"_error": e.code, "_msg": err.get("message") or err.get("error") or ""}
+            if e.code < 500:          # 4xx 重试没意义（no_match / invalid_rank）
+                return d
+            last = str(d)
+        except Exception as e:        # 超时 / 连接被重置 / SSL 抖动：重试
+            last = f"{type(e).__name__}: {e}"
+        if attempt < retry:
+            time.sleep(0.4 * (attempt + 1))
+    return {"_error": "net", "_msg": last}
 
 
 def count_of(tags):
@@ -98,7 +117,7 @@ def resolve_tags(tags, shape, tries):
                 continue
             if d.get("nsfw") is True:      # 硬校验：宁可不换图也不用 NSFW
                 continue
-            if shape == "portrait" and d.get("height", 0) <= d.get("width", 0):
+            if shape == "portrait" and (d.get("height") or 0) <= (d.get("width") or 0):
                 continue
             return work, (rank, d)
         print(f"[cover] {work} 抽到 {tries} 次都不合条件，放宽一档")
@@ -126,7 +145,7 @@ def main():
     ap.add_argument("--tags", nargs="*", default=None, help=f"图库标签（默认 {' '.join(DEFAULT_TAGS)}）")
     ap.add_argument("--shape", choices=["any", "portrait"], default="portrait",
                     help="portrait = 只要竖图（封面默认，池子里 832x1216 占多数）")
-    ap.add_argument("--rank", type=int, help="指定排位（可复现某张图），给了就不随机")
+    ap.add_argument("--rank", type=int, help="指定排位（可复现某张），给了就不随机")
     ap.add_argument("--json", help="人物数据 JSON；从中取 book_meta.cover_tags 当标签")
     ap.add_argument("--tries", type=int, default=8, help="同一标签组合的最大重抽次数")
     ap.add_argument("--seed", type=int, help="随机种子（想复现「随机」结果时用）")
@@ -154,18 +173,19 @@ def main():
     path, size, ctype = download(data["id"], a.out)
     meta = {
         "file": os.path.basename(path),
-        "source": "latent.moe 公开图库（resolve，仅 SFW）",
+        "source": "latent.moe 公开图库（resolve，仅 SFW；按排位随机，非热度排序）",
         "tags": used,
         "rank": rank,
         "nsfw": data.get("nsfw"),
         "width": data.get("width"),
         "height": data.get("height"),
         "model": data.get("model"),
+        "view_count": data.get("viewCount"),
         "artwork_id": data.get("id"),
         "artwork_url": data.get("artworkUrl"),
-        "view_count": data.get("viewCount"),
         "content_type": ctype,
         "bytes": size,
+        "picked_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
     with open(os.path.join(os.path.dirname(os.path.abspath(path)), "_封面.json"),
               "w", encoding="utf-8") as f:
