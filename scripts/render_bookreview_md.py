@@ -179,16 +179,20 @@ def render(data, img_dir=None, images=True):
             pur = c.get("purity") or {}
             if clean(pur.get("verdict")):
                 body += f"纯洁度结论：{clean(pur['verdict'])}。"
-            out += [f"{i}. **{c.get('name','')}**，{body}" if body
-                    else f"{i}. **{c.get('name','')}**", ""]
+            # 序号写进标题文本，不用 md 有序列表语法：
+            # 列表项之间夹空行与图片段落会被渲染器判成新列表，全部重新显示为 1。
+            out += [f"### {i}. {c.get('name','')}", ""]
+            if body:
+                out.append(body)
+                out.append("")
             tags = c.get("personality_tags")
             if isinstance(tags, list) and tags:
-                out.append(f"   性格特点：{'、'.join(clean(t) for t in tags if clean(t))}")
+                out.append(f"性格特点：{'、'.join(clean(t) for t in tags if clean(t))}")
             elif clean(c.get("personality")):
-                out.append(f"   性格特点：{clean(c['personality'])}")
+                out.append(f"性格特点：{clean(c['personality'])}")
             sl = c.get("signature_line")
             if isinstance(sl, dict) and clean(sl.get("quote", "")):
-                out.append(f"   名场面：「{clean(sl['quote'])}」"
+                out.append(f"名场面：「{clean(sl['quote'])}」"
                            + (f" —— {clean(sl.get('scene',''))}" if clean(sl.get("scene", "")) else ""))
             out.append("")
             if images:
@@ -202,13 +206,13 @@ def render(data, img_dir=None, images=True):
         out += ["## 其他角色", ""]
         for s in side:
             if isinstance(s, str):
-                out.append(f"+ {clean(s)}")
+                out.append(f"- {clean(s)}")
                 continue
             nm = clean(s.get("name", ""))
             tt = clean(s.get("title", ""))
             nt = clean(s.get("note", ""))
-            bits = "、".join(x for x in (tt, nt) if x)
-            out.append(f"+ {nm}" + (f"（{bits}）" if bits else ""))
+            head = f"**{nm}**" + (f"（{tt}）" if tt else "")
+            out.append(f"- {head}：{nt}" if nt else f"- {head}")
         out.append("")
 
     # ---- 分维度点评 ----

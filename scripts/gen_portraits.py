@@ -52,6 +52,10 @@ STYLE = {
 BASE_POS = ["1girl", "solo", "upper body", "looking at viewer", "arms at sides",
             "standing", "detailed face", "beautiful detailed eyes"]
 
+# 画师 tag：放在角色 tag 之前，权重足。morikura_en = 森仓円，干净通透的萌系少女上色，
+# 负向词里必须去掉「artist name」（否则和这里的画师 tag 打架）。
+DEFAULT_ARTIST = "morikura_en"
+
 # 男主用这套（1girl 换 1boy，眼睛 tag 换成男性向的写法）
 BASE_POS_MALE = ["1boy", "solo", "upper body", "looking at viewer", "arms at sides",
                  "standing", "detailed face", "handsome"]
@@ -86,7 +90,7 @@ def dedupe(tags):
     return out
 
 
-def build_prompt(ch, style, male=False):
+def build_prompt(ch, style, male=False, artist=DEFAULT_ARTIST):
     own = [t.strip() for t in re.split(r"[,，]", (ch.get("appearance_prompt") or "")) if t.strip()]
     style_pos, style_neg = STYLE[style]
     base = list(BASE_POS_MALE if male else BASE_POS)
@@ -94,8 +98,12 @@ def build_prompt(ch, style, male=False):
     for k, rivals in AGE_TAGS.items():
         if k in base and any(r in low for r in rivals):
             base.remove(k)
-    tags = dedupe(base + own + style_pos)
+    art = [artist] if artist and artist.lower() not in ("none", "no") else []
+    tags = dedupe(art + base + own + style_pos)
     neg = list(dedupe([BASE_NEG] + style_neg))
+    if art:
+        # 「artist name」是防签名的负向词，但指定画师时会把画风一起压掉
+        neg = [t for t in neg if t not in ("artist name", "copyright name")]
     if male:
         neg = [t for t in neg if t not in ("multiple girls",)] + ["multiple girls", "female focus"]
     return ", ".join(tags), ", ".join(dedupe(neg))
@@ -133,6 +141,8 @@ def main():
     ap.add_argument("--no-male", dest="with_male", action="store_false",
                     help="不画男主")
     ap.add_argument("--style", default="anime", choices=sorted(STYLE))
+    ap.add_argument("--artist", default=DEFAULT_ARTIST,
+                    help="画师 tag（默认 morikura_en；传 none 关掉）")
     ap.add_argument("--resolution", default="portrait",
                     choices=["square", "portrait", "landscape"])
     ap.add_argument("--seed", type=int, help="固定种子（所有角色同一 seed 会让构图趋同，慎用）")
@@ -171,12 +181,12 @@ def main():
                    if f.endswith(".webp") and safe_name(name) in f]
             if not hit:
                 continue
-            prompt, _ = build_prompt(ch, a.style, male=(name == male_name))
+            prompt, _ = build_prompt(ch, a.style, male=(name == male_name), artist=a.artist)
             index.append({"name": name, "file": sorted(hit)[0], "seed": None,
                           "artwork_id": None, "prompt": prompt})
         idx_path = os.path.join(img_dir, "_图片索引.json")
         with open(idx_path, "w", encoding="utf-8", newline="\n") as f:
-            json.dump({"book": data.get("book"), "style": a.style,
+            json.dump({"book": data.get("book"), "style": a.style, "artist": a.artist,
                        "resolution": a.resolution,
                        "items": sorted(index, key=lambda x: x["file"])},
                       f, ensure_ascii=False, indent=1)
@@ -188,7 +198,7 @@ def main():
         if not (ch.get("appearance_prompt") or "").strip():
             print("[SKIP] %s：没有 appearance_prompt（先让子代理按模板三写）" % name)
             continue
-        prompt, negative = build_prompt(ch, a.style, male=(name == male_name))
+        prompt, negative = build_prompt(ch, a.style, male=(name == male_name), artist=a.artist)
         print("\n[%d/%d] %s" % (i, len(chars), name))
         print("  prompt: %s" % prompt)
         if a.dry_run:
@@ -229,7 +239,7 @@ def main():
         by_name[it["name"]] = it
     items = sorted(by_name.values(), key=lambda x: str(x.get("file", "")))
     with open(idx_path, "w", encoding="utf-8", newline="\n") as f:
-        json.dump({"book": data.get("book"), "style": a.style,
+        json.dump({"book": data.get("book"), "style": a.style, "artist": a.artist,
                    "resolution": a.resolution, "items": items},
                   f, ensure_ascii=False, indent=1)
     print("\n[OK] 本次 %d 张，索引共 %d 条：%s" % (len(index), len(items), idx_path))

@@ -413,6 +413,15 @@ def write(path, s):
 def cmd_scan(args):
     text, enc = read_text(args.novel)
     lines = text.split("\n")
+    clipped = ""
+    if getattr(args, "max_line", 0):
+        # txt 混了两版时只扫有效的一段（用 detect_dup_range.py 找边界）
+        keep = min(args.max_line, len(lines))
+        if keep < len(lines):
+            clipped = "已按 --max-line 截断：原 %s 行 → 保留前 %s 行" % (
+                format(len(lines), ","), format(keep, ","))
+            lines = lines[:keep]
+            text = "\n".join(lines)
     starts = line_index(text)
     total = len(lines)
     chars = len(text)
@@ -519,7 +528,7 @@ def cmd_scan(args):
         "volumes": len(vols), "chapters": len(chaps),
         "dup_chapter_nums": dup_nums, "dup_chapter_titles": dup_titles,
         "dup_text_overlap": round(overlap, 3), "chapters_dedup": chap_dedup,
-        "chunks": chunks,
+        "clipped": clipped, "chunks": chunks,
     }
     write(os.path.join(pd, "state.json"),
           json.dumps(state, ensure_ascii=False, indent=1))
@@ -540,6 +549,8 @@ def cmd_scan(args):
         "- 结构：%d 卷 / %d 章" % (len(vols), len(chaps)) if vols else
         "- 结构：无卷标记，%d 章，按 %d 行一块切" % (len(chaps), args.chunk_lines),
     ]
+    if clipped:
+        lines_out.append("- ✂️ " + clipped)
     if dup_line:
         lines_out.append(dup_line)
     lines_out += [
@@ -638,6 +649,8 @@ def main():
     ap.add_argument("--novel")
     ap.add_argument("--out", required=True)
     ap.add_argument("--chunk-lines", type=int, default=2000)
+    ap.add_argument("--max-line", type=int, default=0,
+                    help="只扫前 N 行（txt 混了两版时用，边界先用 detect_dup_range.py 找）")
     ap.add_argument("--top", type=int, default=60)
     ap.add_argument("--digest", action="store_true")
     ap.add_argument("--notes")
