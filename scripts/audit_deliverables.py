@@ -70,6 +70,14 @@ def main():
             if not r:
                 bad += 1
                 print(f"   [未命中] [{c.get('name')}] {q[:70]}")
+        for q in (c.get("appearance_quotes") or []):
+            r = hit(q)
+            if r is None:
+                continue
+            tot += 1
+            if not r:
+                bad += 1
+                print(f"   [未命中·外貌] [{c.get('name')}] {q[:70]}")
     mp = data.get("male_protagonist") or {}
     for q in (mp.get("quotes") or []):
         r = hit(q)
@@ -82,7 +90,21 @@ def main():
     if tot:
         print(f"   结果: {tot - bad}/{tot} 命中" + ("  ✅" if bad == 0 else "  ⚠️ 需处理"))
 
-    # ---- 2) 元数据里的「」标签（人工抽查用）----
+    # ---- 2) 外貌覆盖（用户要求：主要角色必须有可复述的外形锚点）----
+    print("\n== 2. 外貌覆盖 ==")
+    miss = []
+    for c in data.get("characters", []):
+        ap = (c.get("appearance") or "").strip()
+        name = c.get("name", "?")
+        if not ap:
+            miss.append(name)
+            print(f"   [缺失] {name}：appearance 为空")
+        elif len(ap) < 12 and "未" not in ap:
+            print(f"   [过短] {name}：{ap}")
+    if not miss:
+        print(f"   全部 {len(data.get('characters', []))} 个角色都有外貌字段 ✅")
+
+    # ---- 3) 元数据里的「」标签（人工抽查用）----
     spans = []
 
     def walk(o):
@@ -101,13 +123,13 @@ def main():
     walk(data)
     spans = list(dict.fromkeys(spans))
     label = [s for s in spans if not hit(s)]
-    print(f"\n== 2. 元数据「」标签抽查 ==")
+    print(f"\n== 3. 元数据「」标签抽查 ==")
     print(f"   共 {len(spans)} 条，未逐字命中 {len(label)} 条（多为指代性标签/概括，非引文主张）")
     for s in label[:25]:
         print(f"   ·  {s[:66]}")
 
-    # ---- 3) 行号残留 ----
-    print("\n== 3. 成品行号残留 ==")
+    # ---- 4) 行号残留 ----
+    print("\n== 4. 成品行号残留 ==")
     docs = a.docs or sorted(glob.glob(os.path.join(os.path.dirname(a.json), "*.md")))
     for d in docs:
         if not os.path.exists(d):
@@ -116,9 +138,9 @@ def main():
         n = len(re.findall(r"L\d{2,}", s))
         print(f"   {os.path.basename(d)}: 行号残留 {n}" + ("  ✅" if n == 0 else "  ⚠️"))
 
-    # ---- 4) 幻觉实体探针 ----
+    # ---- 5) 幻觉实体探针 ----
     if a.probe:
-        print("\n== 4. 幻觉实体探针 ==")
+        print("\n== 5. 幻觉实体探针 ==")
         if not main_txt:
             print("   [SKIP] 原文缺失，改为在各卷笔记中检索")
             notes_dir = os.path.join(os.path.dirname(os.path.abspath(a.json)), "..", "scan_notes")

@@ -94,6 +94,9 @@ def render(data):
             v = clean(c.get(k, ""))
             if v:
                 out.append(f"- **{label}**：{v}")
+        apq = [clean(q) for q in (c.get("appearance_quotes") or []) if clean(q)]
+        if apq:
+            out.append("  > 外貌依据：" + " / ".join(f"「{q}」" for q in apq))
         out.append(purity_line(c.get("purity", {})))
         evs = [clean(e) for e in (c.get("purity", {}).get("evidence") or []) if clean(e)]
         if evs:
