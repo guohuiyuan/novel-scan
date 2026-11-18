@@ -53,8 +53,9 @@ def render(data, img_dir=None):
     chars = data.get("characters", [])
     n_lei = sum(len(c.get("leidian", [])) for c in chars)
     n_yu = sum(len(c.get("yumen", [])) for c in chars)
+    male_n = 1 if (data.get("male_protagonist") or {}).get("name") else 0
     out.append(f"> 来源：{data.get('source','')} ｜ 生成：{data.get('generated_at','')} ｜ "
-               f"{len(chars)} 角色 ｜ 雷点 {n_lei} 条 ｜ 郁闷点 {n_yu} 条 ｜ "
+               f"{len(chars) + male_n} 角色 ｜ 雷点 {n_lei} 条 ｜ 郁闷点 {n_yu} 条 ｜ "
                f"{data.get('verify_note') or '全部事实经原文核验'}")
     out.append("")
 
