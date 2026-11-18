@@ -84,6 +84,77 @@ def scan_structure(lines):
     return vols, chaps
 
 
+def _cn2int(s):
+    """把「一百零二」「１２」「290」这类章号解析成整数；解析失败返回 0。"""
+    s = s.strip().translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    if s.isdigit():
+        return int(s)
+    d = {c: i for i, c in enumerate("零一二三四五六七八九")}
+    sect = num = 0
+    for ch in s:
+        if ch in d:
+            num = d[ch]
+        elif ch == "十":
+            sect += (num or 1) * 10
+            num = 0
+        elif ch == "百":
+            sect += (num or 1) * 100
+            num = 0
+        elif ch == "千":
+            sect += (num or 1) * 1000
+            num = 0
+    return sect + num
+
+
+def dup_text_ratio(text, n=40, w=48):
+    """后一半原文里随机取 n 个 48 字窗口，看有多少在前一半里原样出现过。
+
+    章号重复本身不能定罪：中文网文常按卷重新编号（第1章…第N章，然后又是第1章），
+    那是正常结构。真"重复收录"的标志是**正文本身**在后半本再出现一遍。
+    """
+    half = len(text) // 2
+    if half < w * 20:
+        return 0.0, 0
+    head, tail = text[:half], text[half:]
+    step = max(1, (len(tail) - w) // n)
+    hits = tot = 0
+    for i in range(0, len(tail) - w, step):
+        seg = tail[i:i + w]
+        if seg.count("\n") > 2 or not seg.strip():
+            continue
+        tot += 1
+        if seg in head:
+            hits += 1
+        if tot >= n:
+            break
+    return (hits / tot if tot else 0.0), tot
+
+
+def detect_dup_chapters(chaps):
+    """检测章号/章名重复——txt 里塞了"两个版本"或"重复收录"时的典型症状。
+
+    返回 (重复章号数, 重复同名章数, 去重后章数)。
+    去重章数按"最大章号"算：第二版常从第 1 章重新编号，用唯一号计数会漏。
+    只做提示，不改切块：切块仍按行号走（重复段也照扫，子代理会发现矛盾并标记）。
+    """
+    nums, titles, max_no = Counter(), Counter(), 0
+    for title, _ln in chaps:
+        m = re.match(r"^[\s#＃=\-—]*(?:正文\s*)?第\s*([" + CN_NUM + r"]+)\s*[章节回]", title)
+        if m:
+            n = _cn2int(m.group(1))
+            if n:
+                nums[n] += 1
+                max_no = max(max_no, n)
+        t = re.sub(r"^[\s#＃=\-—]*(?:正文\s*)?第\s*[" + CN_NUM + r"]+\s*[章节回]\s*", "", title)
+        t = re.sub(r"[（(][^（()）]*[)）]", "", t).replace("(本章免费)", "").strip()
+        if t:
+            titles[t] += 1
+    dup_nums = sum(k - 1 for k in nums.values() if k > 1)
+    dup_titles = sum(k - 1 for k in titles.values() if k > 1)
+    dedup = max_no if max_no else len(chaps) - dup_nums
+    return dup_nums, dup_titles, dedup
+
+
 def build_chunks(total_lines, vols, chaps, chunk_lines):
     """按卷切块；卷内再按 chunk_lines 切；无卷则整本切。"""
     if vols:
@@ -346,6 +417,8 @@ def cmd_scan(args):
     total = len(lines)
     chars = len(text)
     vols, chaps = scan_structure(lines)
+    dup_nums, dup_titles, chap_dedup = detect_dup_chapters(chaps)
+    overlap, _win = dup_text_ratio(text)
     chunks = build_chunks(total, vols, chaps, args.chunk_lines)
     names = find_candidates(text, starts, args.top)
     # 外貌归并只认前 30 名候选，避免"脸皮/焦急"这类碎片把行抢走
@@ -444,6 +517,8 @@ def cmd_scan(args):
         "novel": os.path.abspath(args.novel), "encoding": enc,
         "chars": chars, "lines": total, "chunk_lines": args.chunk_lines,
         "volumes": len(vols), "chapters": len(chaps),
+        "dup_chapter_nums": dup_nums, "dup_chapter_titles": dup_titles,
+        "dup_text_overlap": round(overlap, 3), "chapters_dedup": chap_dedup,
         "chunks": chunks,
     }
     write(os.path.join(pd, "state.json"),
@@ -451,12 +526,23 @@ def cmd_scan(args):
 
     # summary.md
     est_tokens = chars * 0.7
+    dup_line = ""
+    if chaps and overlap >= 0.12 and dup_nums > max(3, len(chaps) * 0.05):
+        dup_line = ("- ⚠️ **疑似重复收录**：%d 个章标题里有 %d 个章号重复，"
+                    "后半本有 %.0f%% 的正文片段在前半本原样出现过；去重后约 **%d 章**。"
+                    "txt 可能拼进了第二版/重复段落——书况里的字数与章数以 `book_info.json` 的 "
+                    "`book_meta` 为准，别直接引用上面的字数。"
+                    % (len(chaps), dup_nums, overlap * 100, chap_dedup))
     lines_out = [
         "# 预扫结果", "",
         "- 原文：`%s`（编码 %s）" % (args.novel, enc),
         "- 规模：**%.1f 万字 / %s 行**" % (chars / 10000, format(total, ",")),
         "- 结构：%d 卷 / %d 章" % (len(vols), len(chaps)) if vols else
         "- 结构：无卷标记，%d 章，按 %d 行一块切" % (len(chaps), args.chunk_lines),
+    ]
+    if dup_line:
+        lines_out.append(dup_line)
+    lines_out += [
         "- 分块：**%d 块**（每块 ≤%d 行，一块一次 Read 读完）" % (len(chunks), args.chunk_lines),
         "- 通读一遍的原文输入量 ≈ **%.0f 万 tokens**（一次性、不重复）" % (est_tokens / 10000),
         "- 人物候选 %d 个；外貌命中归并到 %d 人；雷点候选 %d 类 / 郁闷点候选 %d 类"
@@ -480,6 +566,10 @@ def cmd_scan(args):
           % (chars / 10000, format(total, ","), len(vols), len(chaps),
              len(chunks), args.chunk_lines))
     print("  通读一遍输入量 ≈ %.0f 万 tokens（一次性）" % (est_tokens / 10000))
+    if dup_line:
+        print("  ⚠️ 疑似重复收录：%d 章中 %d 个章号重复、后半本重叠 %.0f%%，去重后约 %d 章"
+              "（书况以 book_info.json 为准）"
+              % (len(chaps), dup_nums, overlap * 100, chap_dedup))
     print("  人物候选 %d | 外貌归并 %d 人 | 雷点候选 %d 类 | 郁闷点候选 %d 类"
           % (len(names), len(by_char), len(lei), len(yu)))
     print("  下一步：设 %d 个并行子代理，看 %s" % (min(8, len(chunks)), os.path.join(pd, "summary.md")))

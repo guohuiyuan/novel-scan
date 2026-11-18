@@ -83,8 +83,8 @@
   "importance_rank": 1, "identity": "",
   "appearance": "", "appearance_quotes": [],
   "appearance_prompt": "",
-  "personality": "",
-  "relationship_to_mc": "",
+  "personality": "", "personality_tags": ["三到四个短标签"],
+  "relationship_to_mc": "", "arc": "经历线与结局，≤250字",
   "purity": {"chu":"处|非处|未知","jingshen_chu":"精神初|非初|未知","hunyin":"初婚|有婚史婚约|未知","chumo":"初摸|被非男主触碰|未知","verdict":"全初|部分初|非初|未知","evidence":["引文…"]},
   "leidian": [{"category":"","evidence":"","quote":""}],
   "yumen": [{"category":"","evidence":"","quote":""}],
@@ -108,3 +108,88 @@
 7. `signature_line`：她本人说出口的一句台词，≤60 字，**逐字照抄**（不改写、不拼接、不省略），
    配一句 `scene` 说明当场情形；`line_no` 填原文行号仅供核对。
 8. aliases_rejected 记录被剔除的别名与理由（0命中/属于别人/是作品内角色名等）。
+9. `personality_tags` 三到四个短标签（各 2-6 字，如「冷艳高贵」「极度护短」「口硬心软」），
+   只取原文行为能佐证的；写不出三个就写两个，不要凑。
+10. `arc` 是「经历线与结局」的连续叙述（≤250 字，不是事件列表），要能直接贴进书评正文：
+    怎么相遇 → 关系怎么变 → 关键转折 → 结局。发生在别处的剧情不要写进来。
+
+## 模板四：书级字段 + 男主卡（D 阶段前置，**一个子代理写全书**）
+
+```
+你是扫书主编。为《{书名}》写「书况 + 评分 + 简介 + 男主 + 分维度点评」，
+产出 {out}/book_info.json（UTF-8，单个 JSON 对象）。女主逐个另有子代理写，你不写女主条目。
+
+原文：{novel_path}
+预扫摘要：{out}/_prescan/summary.md（字数/章数/卷数/人物候选）
+已定稿的女主 JSON：{out}/json/*.json（只读，用来对齐"女主方面"的点评口径）
+已知的作者/题材线索：来自文件名 `{文件名}`
+
+读法（控制阅读量）：
+1. 先 Read 预扫 summary.md。
+2. Read 原文开头 1200 行（简介、开局、主角人设）。
+3. 用 Grep 定位终局（"大结局/完结/最后一章/十年后"）与几个关键转折，各 Read 200-300 行。
+4. 全书走向可用 `_prescan/chunks.tsv` 的章名序列辅助（章名本身就是剧情骨架）。
+
+输出 JSON 结构（字段一个不能少，未知写空字符串或"未知"，**不许编**）：
+{
+ "book_meta": {
+   "title": "书名", "author": "作者（拿不准写空）",
+   "genre": ["题材1", "题材2"],
+   "status": "完结|连载中|未知",
+   "platform": "首发平台（无法确认写'未知'，不许猜起/点/纵横）",
+   "word_count": "", "chapters": 0, "volumes": 0
+ },
+ "ratings": {
+   "情节": {"grade": "S|A+|A|A-|B+|B|C", "reason": "一句话理由，≤60字"},
+   "文笔": {"grade": "", "reason": ""},
+   "感情": {"grade": "", "reason": ""},
+   "车速": {"grade": "", "reason": ""},
+   "人物刻画": {"grade": "", "reason": ""},
+   "新意": {"grade": "", "reason": ""},
+   "压抑度": {"grade": "", "reason": ""},
+   "总评": {"grade": "", "reason": ""}
+ },
+ "blurb": ["简介第1段", "第2段"],
+ "male_protagonist": {
+   "name": "", "aliases": [],
+   "identity": "出身/职业/开局身份，≤120字",
+   "appearance": "≤80字外形锚点，作者没写就写'作者未正面描写'",
+   "appearance_quotes": ["≤50字原文照抄"],
+   "appearance_prompt": "英文 tag，只写腰部以上，20-40个",
+   "personality": "≤80字，用行为举例",
+   "arc": "完整经历线到结局，≤350字（书评正文就靠这段）",
+   "key_events": ["按时间顺序，每条≤40字"],
+   "quotes": ["2-4条男主台词，逐字照抄"],
+   "signature_line": {"quote":"","scene":"","line_no":0},
+   "confidence": "high|medium|low"
+ },
+ "dimension_reviews": [
+   {"title":"剧情方面","text":"..."},
+   {"title":"女主方面","text":"..."},
+   {"title":"车技方面","text":"..."},
+   {"title":"设定方面","text":"..."},
+   {"title":"缺点方面","text":"..."}
+ ],
+ "side_characters": [{"name":"","title":"身份/称号","note":"一句特点"}],
+ "heroine_overview": "女主整体一句总评（可选）",
+ "coverage": "本次扫读覆盖范围，如'全本 423 章，人物条目覆盖 4 位主要女角'"
+}
+
+规则：
+1. **评分是主观判断，但理由要落在文本事实上**（"后期战力膨胀到徒手破虚空""感情线收尾给了九女并娶"），
+   不许写"文笔优美""剧情精彩"这类空评。压抑度：越高＝越虐（S=极虐，C=轻松）。
+2. `blurb` 是**剧情简介**（200-400 字，可 2-3 段），写开局设定与核心冲突，**不剧透结局**，
+   不写评价、不写"本书讲述了"这种套话。
+3. `male_protagonist.arc` 要写成能直接读的叙述：开局身份 → 靠什么起势 → 关键战役/转折
+   → 终局与结局。这是书评「男主」整段，不能是事件列表堆叠。
+4. `dimension_reviews` 五段都要写，`缺点方面` 必须有实质缺点（没有真实缺点就写"未发现明显硬伤"并说明依据）。
+5. `side_characters` 只收在女主列表之外、戏份不足以单列但读者会记住的角色（每人一行）。
+6. `book_meta.status` / `platform` 从本地 txt 无法确认的，一律写"未知"，**禁止猜测**。
+7. 引文（appearance_quotes/quotes/signature_line）逐字照抄原文，会跑审计逐条核验。
+8. 遇到露骨段落：只提取"发生了关系/初体验"这类事实与必要引文，跳过描写细节，不要复述露骨内容。
+```
+
+要点：
+- 这一步是**串行单点**（只有一个子代理读全书骨架），不要拆给多人，否则评分口径会打架。
+- 它写完先看一遍 `ratings` 是否 8 项齐全、`arc` 是否成段——缺了后面书评就没男主章节。
+- 字数/章数/卷数由 `assemble_json.py` 从 `_prescan/state.json` 自动补，子代理留空即可。

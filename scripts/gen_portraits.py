@@ -52,6 +52,10 @@ STYLE = {
 BASE_POS = ["1girl", "solo", "upper body", "looking at viewer", "arms at sides",
             "standing", "detailed face", "beautiful detailed eyes"]
 
+# 男主用这套（1girl 换 1boy，眼睛 tag 换成男性向的写法）
+BASE_POS_MALE = ["1boy", "solo", "upper body", "looking at viewer", "arms at sides",
+                 "standing", "detailed face", "handsome"]
+
 # 年龄/体型 tag 互斥：角色自己带了更具体的，就把基线里的去掉
 AGE_TAGS = {"young woman": ["mature female", "high school student", "loli", "child"],
             "mature female": ["young woman"], }
@@ -59,6 +63,7 @@ AGE_TAGS = {"young woman": ["mature female", "high school student", "loli", "chi
 BASE_NEG = (
     "lowres, worst quality, bad anatomy, bad hands, extra fingers, missing fingers, "
     "text, watermark, signature, username, logo, artist name, copyright name, "
+    "chinese text, english text, text block, corner label, magazine cover, barcode, stamp, "
     "jpeg artifacts, blurry, cropped, deformed, extra limbs, mutation, nsfw, nude, "
     "full body, feet, leaning forward, from below, from above, "
     "outstretched arm, reaching towards viewer, pov, hand in foreground, "
@@ -81,16 +86,19 @@ def dedupe(tags):
     return out
 
 
-def build_prompt(ch, style):
+def build_prompt(ch, style, male=False):
     own = [t.strip() for t in re.split(r"[,，]", (ch.get("appearance_prompt") or "")) if t.strip()]
     style_pos, style_neg = STYLE[style]
-    base = list(BASE_POS)
+    base = list(BASE_POS_MALE if male else BASE_POS)
     low = " ".join(own).lower()
     for k, rivals in AGE_TAGS.items():
         if k in base and any(r in low for r in rivals):
             base.remove(k)
     tags = dedupe(base + own + style_pos)
-    return ", ".join(tags), ", ".join(dedupe([BASE_NEG] + style_neg))
+    neg = list(dedupe([BASE_NEG] + style_neg))
+    if male:
+        neg = [t for t in neg if t not in ("multiple girls",)] + ["multiple girls", "female focus"]
+    return ", ".join(tags), ", ".join(dedupe(neg))
 
 
 def safe_name(s):
@@ -120,6 +128,10 @@ def main():
     ap.add_argument("--out", required=True, help="输出目录（图放 <out>/人物图/）")
     ap.add_argument("--only", help="只出这些人（逗号分隔）")
     ap.add_argument("--top", type=int, default=0, help="只出 importance_rank <= N 的角色")
+    ap.add_argument("--with-male", dest="with_male", action="store_true", default=True,
+                    help="男主也出图（排 00，默认开）")
+    ap.add_argument("--no-male", dest="with_male", action="store_false",
+                    help="不画男主")
     ap.add_argument("--style", default="anime", choices=sorted(STYLE))
     ap.add_argument("--resolution", default="portrait",
                     choices=["square", "portrait", "landscape"])
@@ -134,6 +146,9 @@ def main():
 
     data = json.load(open(a.json, encoding="utf-8"))
     chars = data.get("characters", [])
+    male = data.get("male_protagonist") or {}
+    if a.with_male and male.get("name"):
+        chars = [dict(male, importance_rank=0)] + chars
     if a.only:
         want = {x.strip() for x in a.only.split(",") if x.strip()}
         chars = [c for c in chars if c.get("name") in want]
@@ -142,6 +157,7 @@ def main():
     if not chars:
         print("[ERROR] 没有匹配到角色（检查 --only / --top）")
         return 1
+    male_name = male.get("name")
 
     img_dir = os.path.join(a.out, "人物图")
     os.makedirs(img_dir, exist_ok=True)
@@ -155,7 +171,7 @@ def main():
                    if f.endswith(".webp") and safe_name(name) in f]
             if not hit:
                 continue
-            prompt, _ = build_prompt(ch, a.style)
+            prompt, _ = build_prompt(ch, a.style, male=(name == male_name))
             index.append({"name": name, "file": sorted(hit)[0], "seed": None,
                           "artwork_id": None, "prompt": prompt})
         idx_path = os.path.join(img_dir, "_图片索引.json")
@@ -172,13 +188,14 @@ def main():
         if not (ch.get("appearance_prompt") or "").strip():
             print("[SKIP] %s：没有 appearance_prompt（先让子代理按模板三写）" % name)
             continue
-        prompt, negative = build_prompt(ch, a.style)
+        prompt, negative = build_prompt(ch, a.style, male=(name == male_name))
         print("\n[%d/%d] %s" % (i, len(chars), name))
         print("  prompt: %s" % prompt)
         if a.dry_run:
             continue
         seed = a.seed
-        rank = ch.get("importance_rank") or i
+        rank = ch.get("importance_rank")
+        rank = i if rank is None else rank
         out_path = os.path.join(img_dir, "%02d_%s.webp" % (rank, safe_name(name)))
         try:
             r = call_latent(a.latent, a.key, prompt, negative, out_path,

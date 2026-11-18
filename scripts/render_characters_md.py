@@ -59,14 +59,40 @@ def render(data, img_dir=None):
     out.append("")
 
     male = data.get("male_protagonist", {})
-    if male:
+    if male and male.get("name"):
         out.append(f"## 男主：{male.get('name','')}")
-        if male.get("identity"):
-            out.append(f"- **身份**：{clean(male['identity'])}")
-        if male.get("personality"):
-            out.append(f"- **性格**：{clean(male['personality'])}")
-        if male.get("arc"):
-            out.append(f"- **成长线**：{clean(male['arc'])}")
+        aliases = [clean(a if isinstance(a, str) else str(a.get("alias", a)))
+                   for a in (male.get("aliases") or male.get("aliases_verified") or [])]
+        aliases = [a for a in aliases if a]
+        if aliases:
+            out.append(f"- **别名**：{'、'.join(aliases)}")
+        for k, label in (("identity", "身份"), ("appearance", "外貌"),
+                         ("personality", "性格"), ("arc", "成长线")):
+            v = clean(male.get(k, ""))
+            if v:
+                out.append(f"- **{label}**：{v}")
+        apq = [clean(q) for q in (male.get("appearance_quotes") or []) if clean(q)]
+        if apq:
+            out.append("  > 外貌依据：" + " / ".join(f"「{q}」" for q in apq))
+        if img_dir and os.path.isdir(img_dir):
+            for fn in sorted(os.listdir(img_dir)):
+                if fn.lower().endswith((".webp", ".png", ".jpg")) and clean(male["name"]) in fn:
+                    out += ["", f"![{male['name']}](人物图/{fn})"]
+                    break
+        sl = male.get("signature_line")
+        if isinstance(sl, dict) and clean(sl.get("quote", "")):
+            scene = clean(sl.get("scene", ""))
+            out.append(f"- **名场面**：「{clean(sl['quote'])}」" + (f" —— {scene}" if scene else ""))
+        events = [clean(e if isinstance(e, str) else e.get("event", ""))
+                  for e in (male.get("key_events") or [])]
+        events = [e for e in events if e]
+        if events:
+            out.append("- **关键事件**：")
+            out.extend(f"  {idx}. {e}" for idx, e in enumerate(events, 1))
+        quotes = [clean(q) for q in (male.get("quotes") or []) if clean(q)]
+        if quotes:
+            out.append("- **原文摘录**：")
+            out.extend(f"  > 「{q}」" for q in quotes)
         out.append("")
 
     for title, items in (("全书雷点汇总", data.get("book_leidian_summary", [])),
@@ -98,6 +124,9 @@ def render(data, img_dir=None):
         apq = [clean(q) for q in (c.get("appearance_quotes") or []) if clean(q)]
         if apq:
             out.append("  > 外貌依据：" + " / ".join(f"「{q}」" for q in apq))
+        tags = c.get("personality_tags")
+        if isinstance(tags, list) and [t for t in tags if clean(t)]:
+            out.append(f"- **性格标签**：{'、'.join(clean(t) for t in tags if clean(t))}")
         if img_dir:
             for fn in sorted(os.listdir(img_dir)) if os.path.isdir(img_dir) else []:
                 if fn.lower().endswith((".webp", ".png", ".jpg")) and clean(c.get("name", "")) in fn:

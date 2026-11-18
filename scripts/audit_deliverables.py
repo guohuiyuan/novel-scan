@@ -79,7 +79,7 @@ def main():
                 bad += 1
                 print(f"   [未命中·外貌] [{c.get('name')}] {q[:70]}")
     mp = data.get("male_protagonist") or {}
-    for q in (mp.get("quotes") or []):
+    for q in (mp.get("quotes") or []) + (mp.get("appearance_quotes") or []):
         r = hit(q)
         if r is None:
             continue
@@ -92,8 +92,11 @@ def main():
 
     # ---- 2) 外貌覆盖（用户要求：主要角色必须有可复述的外形锚点）----
     print("\n== 2. 外貌覆盖 ==")
+    all_chars = list(data.get("characters", []))
+    if mp.get("name"):
+        all_chars.insert(0, dict(mp, name="男主·" + mp["name"]))
     miss = []
-    for c in data.get("characters", []):
+    for c in all_chars:
         ap = (c.get("appearance") or "").strip()
         name = c.get("name", "?")
         if not ap:
@@ -102,11 +105,13 @@ def main():
         elif len(ap) < 12 and "未" not in ap:
             print(f"   [过短] {name}：{ap}")
     if not miss:
-        print(f"   全部 {len(data.get('characters', []))} 个角色都有外貌字段 ✅")
+        print(f"   全部 {len(all_chars)} 个角色都有外貌字段 ✅")
 
     # ---- 2b) 名场面台词覆盖（做视频用）----
     print("\n== 2b. 名场面台词 ==")
-    chars = data.get("characters", [])
+    chars = list(data.get("characters", []))
+    if mp.get("name"):
+        chars.insert(0, dict(mp, name="男主·" + mp["name"]))
     has_line = 0
     for c in chars:
         sl = c.get("signature_line")
@@ -119,6 +124,45 @@ def main():
             print(f"   [缺失] {c.get('name')}：signature_line 为空")
     print(f"   {has_line}/{len(chars)} 个角色有名场面台词"
           + ("  ✅" if has_line == len(chars) else "  ⚠️"))
+
+    # ---- 2c) 书级字段（对标扫书帖：书况/评分/简介/分维度点评）----
+    print("\n== 2c. 书级字段 ==")
+    bm = data.get("book_meta") or {}
+    need = [("书名", bm.get("title")), ("作者", bm.get("author")), ("字数", bm.get("word_count")),
+            ("题材", bm.get("genre")), ("状态", bm.get("status"))]
+    lack = [k for k, v in need if not v]
+    for k, v in need:
+        if v:
+            print(f"   {k}：{v if not isinstance(v, list) else ' '.join(map(str, v))}")
+    if lack:
+        print(f"   [缺失] book_meta 缺 {'、'.join(lack)}" + ("（平台未知可接受）" if lack == ["平台"] else ""))
+    if bm.get("platform") in (None, ""):
+        print("   [提示] 平台未确认，书评里会显示为「未知」")
+    ratings = data.get("ratings") or {}
+    GRADES = {"S", "S-", "A+", "A", "A-", "B+", "B", "B-", "C", "C-", "D"}
+    want = ["情节", "文笔", "感情", "车速", "人物刻画", "新意", "压抑度", "总评"]
+    miss_r = [k for k in want if k not in ratings]
+    bad_g = []
+    for k, v in ratings.items():
+        g = (v.get("grade") if isinstance(v, dict) else str(v) or "").strip()
+        if g not in GRADES:
+            bad_g.append(f"{k}={g or '空'}")
+        if isinstance(v, dict) and not (v.get("reason") or "").strip():
+            bad_g.append(f"{k}=无理由")
+    print(f"   评分：{len(ratings)}/8 项" + ("  ✅" if not miss_r and not bad_g else ""))
+    if miss_r:
+        print(f"   [缺失] 评分缺 {'、'.join(miss_r)}")
+    if bad_g:
+        print(f"   [异常] 档位不在 S/A+/A/A-/B+/B/C 或缺理由：{'、'.join(bad_g)}")
+    blurb = data.get("blurb") or []
+    n_blurb = len("".join(blurb) if isinstance(blurb, list) else str(blurb))
+    print(f"   简介：{n_blurb} 字" + ("  ✅" if 120 <= n_blurb <= 800 else "  ⚠️ 建议 200-400 字"))
+    dims = [d.get("title") if isinstance(d, dict) else "" for d in (data.get("dimension_reviews") or [])]
+    need_dim = ["剧情方面", "女主方面", "车技方面", "设定方面", "缺点方面"]
+    miss_d = [d for d in need_dim if d not in dims]
+    print(f"   分维度点评：{len(dims)} 段" + ("  ✅" if not miss_d else f"  [缺失] {'、'.join(miss_d)}"))
+    if not (mp.get("name") and (mp.get("arc") or "").strip()):
+        print("   [缺失] 男主卡无 arc（书评「男主」段会写不出来）")
 
     # ---- 3) 元数据里的「」标签（人工抽查用）----
     spans = []

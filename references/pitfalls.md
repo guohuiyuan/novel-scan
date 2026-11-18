@@ -36,6 +36,7 @@
 - **写了鞋/裤/裙长/腿/身高就一定出全身照**：`long legs, high heels, capri pants` 三个 tag 直接把"upper body"顶掉。`appearance_prompt` 只写腰部以上。
 - **默认构图会被掰成 POV**：只给 `upper body, looking at viewer` 时，模型爱画成朝镜头伸手/低头俯身。加 `arms at sides, standing` + 负向 `outstretched arm, reaching towards viewer, pov, hand in foreground` 才稳住。
 - **水印**：`watermark, signature, username` 拦不住画师签名，要补 `logo, artist name, copyright name`。
+- **角落刊头小字**：男主那张图右上角被画了一块"杂志刊头"式小字，上面那些负向词也没拦住。补 `chinese text, english text, text block, corner label, magazine cover, barcode, stamp` 后干净了。
 - **发色偏色**：只写 `black hair` 会出绿/蓝挑染，写 `jet black hair` 并加负向 `streaked hair, green hair` 才纯黑。
 - **一套衣服一个表情**：把全书穿过的都列上会串成一身怪衣服；`cold expression` 和 `smile` 同时写会互相打架。
 - 结论：`--steps 12` 明显比 8 稳；`--resolution portrait` 920×1536 正好做竖屏视频。
@@ -44,3 +45,18 @@
 - 都市良人行里一位女角的样本窗口露骨度高，子代理直接回了"无法回答"，同批另外三个正常完成。
 - 处理：重派时明确"只提取非露骨事实（身份/外貌/关系/台词），遇到露骨段落跳过不引用"，仍拿不到就由主代理按已抽线索自己写 JSON，并标 `confidence: medium`。
 - 别把拒答当成"这个角色没内容"——`characters.tsv` 里频次高的角色必须有 JSON。
+
+## 书级字段结构性缺失（都市良人行，2026-11-18 补）
+- 症状：产物齐了人物卡、JSON、女主图，但**书评该有的开头一屏全没有**——没有作者/字数/题材/状态/平台，没有 8 维评分，没有简介，没有分维度点评；`male_protagonist` 是个空对象 `{}`。
+- 根因：所有子代理都在写"角色"，**没有任何环节负责"书"本身**。角色模板再细，也长不出评分表和简介。
+- 对策：独立 `C2` 阶段，一个子代理通读全书骨架写 `book_info.json`，再由 `assemble_json.py --meta` 并进主 JSON、`render_bookreview_md.py` 渲染成扫书稿。**评分只能一个人给口径**，拆给多人会打架。
+
+## txt 里可能混着两个版本（都市良人行）
+- 现象：预扫报 201.5 万字 / 423 章，实际约 101 万字 / 290 章。同一场戏出现两次（"工作人员取过红色小本…加盖了钢印" 在 40895 行和 76383 行各一份），后半部是另一版带 OCR 批注的重复收录。
+- 检测：`prescan.py` 现在统计重复章号与同名章，命中就在 `summary.md` 顶部告警，并写进 `state.json` 的 `dup_chapter_nums/chapters_dedup`；`assemble_json.py` 在书级字段没写字数时也会提醒。
+- 规矩：**检测到重复收录时，字数与章数一律以 `book_info.json` 为准**，别把虚高的字数写进成品当卖点（读者会去核）。
+- 附带影响：重复段会让子代理读到"自相矛盾"的剧情（同一件事两种写法），要提前告知"本书含重复收录，遇到同一情节两版以先出现者为准"。
+
+## 书评正文的两处重复（渲染层修）
+- 男主段：`identity` 已经说了"十八岁因任务失败强制退伍，回青山一中读高三"，`arc` 又从"十八岁的禹言是猎鹰最年轻的小队长"讲起 → 整句重复。现在有 `arc` 时男主段**只放 arc**，identity 不进正文。
+- 女主段：`identity` 末句常写"与男主从斗嘴到同居并最终结婚"，`arc` 把这句展开成整段 → 同一件事说两遍。现在有 `arc` 时 identity 只取**第一句**（身份定位），关系线交给 arc。
