@@ -28,7 +28,10 @@ def main():
     a = ap.parse_args()
 
     exts = tuple("." + e.strip().lower().lstrip(".") for e in a.fmt.split(",") if e.strip())
-    files = sorted(f for f in os.listdir(a.dir) if f.lower().endswith(exts))
+    out_path = os.path.abspath(a.out or os.path.join(a.dir, "_联系表.png"))
+    # 排除上一次生成的这张（否则重跑会把联系表套娃拼进去）
+    files = sorted(f for f in os.listdir(a.dir)
+                   if f.lower().endswith(exts) and os.path.abspath(os.path.join(a.dir, f)) != out_path)
     if not files:
         print("[ERROR] %s 里没有 %s 图片" % (a.dir, "/".join(exts)))
         return 1

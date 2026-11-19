@@ -43,9 +43,14 @@ def purity_line(pur):
         v = str(pur.get(k, "未知"))
         icon = next((ICON[key] for key in ICON if v.startswith(key)), "❓")
         parts.append(f"{label} {icon}")
-    verdict = pur.get("verdict", "")
+    verdict = clean(pur.get("verdict", ""))
+    note = clean(pur.get("note", ""))
+    # 四维全未知时补一句"为什么未知"（未成年角色按规范不判定，不是作者没写）
+    if all(str(pur.get(k, "未知")).startswith("未知") for k, _ in PURITY_KEYS):
+        four = "未知（%s）" % note if note else "未知"
+        return f"- **纯洁度**：{four}"
     line = " ｜ ".join(parts)
-    return f"- **纯洁度**：{line}" + (f" —— **{clean(verdict)}**" if verdict else "")
+    return f"- **纯洁度**：{line}" + (f" —— **{verdict}**" if verdict else "")
 
 
 def render(data, img_dir=None):

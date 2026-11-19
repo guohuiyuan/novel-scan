@@ -158,7 +158,10 @@ def purity_line(pur):
         return ""
     vals = [str(pur.get(k) or "未知").strip() for k, _ in PURITY_KEYS]
     if all(v.startswith("未知") for v in vals):
-        return "未知"          # 四维全无证据，逐项列四个 ❓ 只是噪音
+        # 四维全无证据时逐项列四个 ❓ 只是噪音；但"为什么未知"要交代一句——
+        # 未成年角色按规范整块不判定，读者否则会误以为作者没写。
+        note = clean(pur.get("note"))
+        return "未知（%s）" % note if note else "未知"
     parts = []
     for (k, label), v in zip(PURITY_KEYS, vals):
         icon = next((PURITY_ICON[key] for key in PURITY_ICON if v.startswith(key)), "❓")
