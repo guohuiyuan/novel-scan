@@ -109,6 +109,11 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
 - **成年向内容会触发子代理拒答**：先把任务书里的"阅读方法"改成 Grep 取单句（`-A 1 -B 1`）+ 明说"遇到露骨段落跳过、只记发生了关系这一事实层"，再派；仍拒答就由主代理按线索自己写，`confidence` 记 medium。实测《都市良人行》11 人里 2 人首次派活被拒，改写任务书后重派全部通过。
 - **未成年角色（学生妹、养妹）的卡只写身份/学业/家庭关系**：`purity` 四维与 `verdict` 一律"未知"、`evidence` 留空，`leidian`/`yumen` 只允许"漏女/拒女"这类情节结构条目，禁止任何身体相关类别。
 - SPLIT-PAIR 检查：别名重叠+剧情互斥的并成一人；疑似碎片逐一 grep 裁定。**"真身/化身"也要合并**（如许念欣＝伊藤念子），否则书评里会出现同一个人的两张卡。
+- **可以边整理边出图**：人物图不必等到 D 阶段——它只依赖每个角色 JSON 里的 `name / appearance_prompt / importance_rank`，C 阶段每写完 3-5 人就跑一次
+  ```bash
+  python <skill>/scripts/gen_portraits.py --chars-dir <输出目录>/json --male <男主名> --out <输出目录>
+  ```
+  已经出过的图自动 `skip`（不重复花额度），新落盘的才出；男主从 `book_info.json` 的 `male_protagonist` 自动取（C2 写完就跑得动）。**不要**拿 assemble 后的合并 JSON 做增量：`assemble_json.py` 会把 rank 压平成 1..N，只喂一批子集会被重新编号，图名（`05_xxx.webp`）就跟最终书评里的序号对不上。中途改过 `appearance_prompt` 或换了 `--seed-salt`，用 `--force` 重出指定角色。
 
 ### C2. 书级字段与男主卡（**一个子代理写全书**，串行）
 扫书帖的开头那一屏（书名/作者/字数/题材/状态/平台 + 8 维评分 + 简介 + 男主 + 分维度点评）不来自任何单个角色，必须单独派活，否则书评缺半篇。
@@ -152,6 +157,7 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
    - `--merge` 额外拼一张无缝全文长图（尺寸很大，仅供本地看）。
    - 出图后自检：逐张打印 `宽×高px` 与体积，校验「单张 ≤5MB / 像素高 ≤5680」，并在目录里写 `_图片顺序.txt`。
 6. 可选：**人物图**（按外貌反推出图，做扫书视频的立绘）。**男主默认一起出（排 `00`）**。书评第一屏那张封面**不是这里出的**（走 `pick_cover.py`，见「书评标题与封面」）。
+   - **时机**：这是整条链路里最靠后的一步，但**没必要真等到最后**——本步只用单角色 JSON 的 `appearance_prompt`，所以实践中在 C 阶段就分批出（`--chars-dir <目录>/json --male <男主名>`，见上节）。放到最后只适合「一次出齐、不想中间看图」的场合。
    ```bash
    python <skill>/scripts/gen_portraits.py --json <人物数据.json> --out <输出目录> \
        --style anime --artist morikura_en   # anime | watercolor | realistic
@@ -362,4 +368,5 @@ python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp --tags 1gi
   瓶颈不是模型慢，是**没有并行 + 每人重读全部笔记**。按本版执行（6-8 并行、每人只读切片）目标 **15-25 分钟**。
 - 不要重跑已验证过的阶段：笔记→人物→组装均可断点复用（看 `state.json` 的 `done`）。
 - 出图：单张 **10-25 秒**（含排队），串行；`--steps 12` 比 8 稳定明显。10 个角色约 3-5 分钟。额度与语音分开，撞 `409 too_many_active` 说明有别的任务在跑，等它完成再提交。
+  - 这 3-5 分钟是**纯等接口**，跟写稿的子代理不抢资源：C 阶段每批写完后顺手跑一次 `--chars-dir`，出图时间基本被隐藏掉，比攒到最后一起出更划算。
 - 封面 roll：`pick_cover.py` **秒级**（二分探张数约 10 次请求 + 1 次下载），免 key、不占出图额度，随便重 roll。

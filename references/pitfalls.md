@@ -152,3 +152,9 @@
 - 用户连续给了四张 latent.moe 参考图（柔光 CG、anima 细线、tawawa 柔蓝、polished 插画），每张都拆了 prompt、出同角色同 seed 小样对比。**最终结论：换了画风还是一般，morikura_en 没问题，观感主要卡在「服饰发型搭配」**。
 - 处理：默认画风回退到 `morikura_en`，`gen_portraits.py` 恢复到 28f3e6e 版本（撤销 a54842d 的 yujie 默认与加权画师串）。SKILL.md 里改成「别频繁换全局画风，单张不好看先改那个角色的 `appearance_prompt`」。
 - 教训：**全局画风是最显眼也最不该反复动的旋钮**。同 seed 的 A/B 小样只能证明「风格变了」，证明不了「变好看了」；单张图不搭通常是该角色服装/发型的 tag 组合问题，改单人 prompt 成本更低、也不会拖累整批的一致性。
+
+## 想边整理边出图，不能拿 assemble 后的 JSON 喂（2026-11-19）
+- 起因：用户问「生图是什么时候，能不能边整理边生图」。答案是可以——出图排在 D 阶段第 6 步（最后），但它真正读的只有每个角色 JSON 的 `name / appearance_prompt / importance_rank`，这些在 C 阶段每写完一个人就齐了。
+- 走错的第一步：想着「C 阶段每批写完就跑一次 `assemble_json` + `gen_portraits --only 这批人`」。不行——`assemble_json.py` 会把女主 rank **压平成 1..N**（为修子代理撞号那次的问题），只喂 3-5 人的子集时这 3-5 人会被重编号成 1..5，出的图叫 `02_xxx.webp`，最终书评按真实 rank 找 `07_xxx.webp`，全裂。
+- 正解：给 `gen_portraits.py` 加了 `--chars-dir <目录>/json --male <男主名>`，直接扫单角色 JSON、用各自的 `importance_rank` 命名；已存在的图默认 `skip`（不重复花额度），要重出加 `--force`。男主的 `appearance_prompt` 在 `book_info.json` 的 `male_protagonist` 里，脚本会在 `json/` 和输出目录根各找一次。
+- 附带坑：跳过时不能直接写一条新索引项——`_图片索引.json` 每跑一次都会重写，新项没有 `artwork_id` 就把旧记录擦成 `None`。现在跳过分支复用旧索引里的 seed / artwork_id。

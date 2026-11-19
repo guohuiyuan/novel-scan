@@ -7,11 +7,17 @@ novel-scan: gen_portraits.py —— 按人物 JSON 里的 appearance_prompt 出�
 https://latent.moe 文生图，落地到 <输出目录>/人物图/<角色名>.webp，并写一份索引。
 
 用法：
+  # 常规：assemble_json 之后整本出
   python gen_portraits.py --json <书名>_人物数据.json --out <输出目录> \
       [--only 曾柔,于紫彤] [--top 12] [--style anime|watercolor|realistic] \
       [--resolution portrait] [--seed-mode name|random|fixed] [--seed-salt 0] \
-      [--seed 1234] [--dry-run] \
+      [--seed 1234] [--dry-run] [--force] \
       [--latent <latent.py 路径>] [--key lat_sk_xxx]
+
+  # 边整理边出图：C 阶段每写完几个角色就能出，不用等 assemble
+  python gen_portraits.py --chars-dir <输出目录>/json --male 成默 --out <输出目录>
+      # 已存在的图自动跳过（断点续跑不重复花额度），要重出加 --force
+      # 男主的 appearance_prompt 在 book_info.json 的 male_protagonist 里，脚本会自动取
 
 seed 策略（画风一致性的关键）：
   同一角色、同一 prompt 只换 seed，就可能一张出九〇年代复古赛璐璐、一张出当代 anime。
@@ -172,7 +178,13 @@ def call_latent(latent, key, prompt, negative, out_path, resolution, seed, steps
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--json", required=True, help="人物数据 JSON")
+    ap.add_argument("--json", help="人物数据 JSON（与 --chars-dir 二选一，assemble 之后用）")
+    ap.add_argument("--chars-dir",
+                    help="C 阶段的单角色 JSON 目录：边写边出图，不必等 assemble（见 --male）")
+    ap.add_argument("--male", help="配 --chars-dir：哪个名字是男主（他那张排 00）")
+    ap.add_argument("--book", help="配 --chars-dir：书名，只写进索引，可省")
+    ap.add_argument("--force", action="store_true",
+                    help="已有同名图也重出（默认跳过，方便断点续跑）")
     ap.add_argument("--out", required=True, help="输出目录（图放 <out>/人物图/）")
     ap.add_argument("--only", help="只出这些人（逗号分隔）")
     ap.add_argument("--top", type=int, default=0, help="只出 importance_rank <= N 的角色")
@@ -199,25 +211,87 @@ def main():
     ap.add_argument("--key", help="临时图像 key（默认读 latent-media 的 keys.env / 环境变量）")
     a = ap.parse_args()
 
-    data = json.load(open(a.json, encoding="utf-8"))
-    chars = data.get("characters", [])
-    male = data.get("male_protagonist") or {}
-    if a.with_male and male.get("name"):
-        chars = [dict(male, importance_rank=0)] + chars
+    if not (a.json or a.chars_dir):
+        ap.error("--json 与 --chars-dir 至少给一个")
+
+    if a.chars_dir:
+        # C 阶段边整理边出图：目录里每落一个单角色 JSON 就能出这一张。
+        # 不走 assemble 后的合并 JSON，是因为 assemble 会把 rank 压平成 1..N——
+        # 只拿一批子集去 assemble，第二批就会被重编号，图名和最终书评里的序号对不上。
+        data = {"book": a.book or os.path.basename(os.path.abspath(a.out))}
+        chars, bad = [], []
+        for fn in sorted(os.listdir(a.chars_dir)):
+            if not fn.endswith(".json") or fn.startswith(("_", ".")):
+                continue
+            try:
+                ch = json.load(open(os.path.join(a.chars_dir, fn), encoding="utf-8"))
+            except Exception as e:
+                bad.append("%s（%s）" % (fn, e))
+                continue
+            if not isinstance(ch, dict) or "characters" in ch or "male_protagonist" in ch:
+                continue          # book_info.json 之类，不是角色卡
+            if ch.get("name"):
+                chars.append(ch)
+        if bad:
+            print("[warn] 跳过解析失败的文件：%s" % "、".join(bad))
+        male_name = a.male or ""
+        hit_male = False
+        for c in chars:
+            if male_name and c.get("name") == male_name:
+                c["importance_rank"] = 0
+                hit_male = True
+        if male_name and not hit_male:
+            # 男主一般写在 book_info.json 的 male_protagonist 里，不在 characters 目录。
+            # C2 写完它落在输出目录根，所以两个位置都找一遍。
+            for bi in (os.path.join(a.chars_dir, "book_info.json"),
+                       os.path.join(a.out, "book_info.json")):
+                if not os.path.exists(bi):
+                    continue
+                try:
+                    m = json.load(open(bi, encoding="utf-8")).get("male_protagonist") or {}
+                except Exception:
+                    m = {}
+                if m.get("name") == male_name:
+                    chars.append(dict(m, importance_rank=0))
+                    break
+        chars.sort(key=lambda c: (c.get("importance_rank")
+                                  if isinstance(c.get("importance_rank"), int) else 999,
+                                  c.get("name") or ""))
+        if male_name and not a.with_male:
+            chars = [c for c in chars if c.get("name") != male_name]
+        male = {"name": male_name} if male_name else {}
+    else:
+        data = json.load(open(a.json, encoding="utf-8"))
+        chars = data.get("characters", [])
+        male = data.get("male_protagonist") or {}
+        if a.with_male and male.get("name"):
+            chars = [dict(male, importance_rank=0)] + chars
+        male_name = male.get("name")
+
     if a.only:
         want = {x.strip() for x in a.only.split(",") if x.strip()}
         chars = [c for c in chars if c.get("name") in want]
     if a.top:
         chars = [c for c in chars if (c.get("importance_rank") or 999) <= a.top]
     if not chars:
-        print("[ERROR] 没有匹配到角色（检查 --only / --top）")
+        print("[ERROR] 没有匹配到角色（检查 --chars-dir / --only / --top）")
         return 1
-    male_name = male.get("name")
 
     img_dir = os.path.join(a.out, "人物图")
     os.makedirs(img_dir, exist_ok=True)
     index = []
     fail = 0
+
+    # 旧索引先读进来：边写边出图时每跑一次都会重写索引，跳过的那几张必须原样保留
+    # 之前的 seed / artwork_id，否则每跑一遍就把已有记录擦成 None。
+    idx_path = os.path.join(img_dir, "_图片索引.json")
+    old = []
+    if os.path.exists(idx_path):
+        try:
+            old = json.load(open(idx_path, encoding="utf-8")).get("items", [])
+        except Exception:
+            old = []
+    old_by_name = {it.get("name"): it for it in old}
 
     if a.reindex:
         for ch in chars:
@@ -263,6 +337,19 @@ def main():
         rank = ch.get("importance_rank")
         rank = i if rank is None else rank
         out_path = os.path.join(img_dir, "%02d_%s.webp" % (rank, safe_name(name)))
+        if os.path.exists(out_path) and not a.force:
+            # 边写边出图的前提：重复跑不重复花额度。换 seed-salt / 改 prompt 后要重出就加 --force。
+            print("  skip 已存在（要重出加 --force）：%s" % os.path.basename(out_path))
+            prev = old_by_name.get(name) or {}
+            index.append({"name": name, "file": os.path.basename(out_path),
+                          "seed": prev.get("seed", seed),
+                          "artwork_id": prev.get("artwork_id"), "prompt": prompt,
+                          "signature_line": prev.get("signature_line")
+                          if prev.get("signature_line")
+                          else (ch.get("signature_line") or {}).get("quote")
+                          if isinstance(ch.get("signature_line"), dict)
+                          else ch.get("signature_line")})
+            continue
         try:
             r = call_latent(a.latent, a.key, prompt, negative, out_path,
                             a.resolution, seed, a.steps)
@@ -284,12 +371,6 @@ def main():
         return 0
 
     idx_path = os.path.join(img_dir, "_图片索引.json")
-    old = []
-    if os.path.exists(idx_path):
-        try:
-            old = json.load(open(idx_path, encoding="utf-8")).get("items", [])
-        except Exception:
-            old = []
     by_name = {it.get("name"): it for it in old}
     for it in index:
         by_name[it["name"]] = it
