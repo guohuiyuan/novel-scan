@@ -158,3 +158,9 @@
 - 走错的第一步：想着「C 阶段每批写完就跑一次 `assemble_json` + `gen_portraits --only 这批人`」。不行——`assemble_json.py` 会把女主 rank **压平成 1..N**（为修子代理撞号那次的问题），只喂 3-5 人的子集时这 3-5 人会被重编号成 1..5，出的图叫 `02_xxx.webp`，最终书评按真实 rank 找 `07_xxx.webp`，全裂。
 - 正解：给 `gen_portraits.py` 加了 `--chars-dir <目录>/json --male <男主名>`，直接扫单角色 JSON、用各自的 `importance_rank` 命名；已存在的图默认 `skip`（不重复花额度），要重出加 `--force`。男主的 `appearance_prompt` 在 `book_info.json` 的 `male_protagonist` 里，脚本会在 `json/` 和输出目录根各找一次。
 - 附带坑：跳过时不能直接写一条新索引项——`_图片索引.json` 每跑一次都会重写，新项没有 `artwork_id` 就把旧记录擦成 `None`。现在跳过分支复用旧索引里的 seed / artwork_id。
+
+## 出图不能并发，一个账号同时只跑一个渲染任务（2026-11-19）
+- 用户点出：「生图本身不能并发，要不然可能失败」。接口是按账号串行的（`POST /api/generate` 撞 `409 too_many_active`），所以「C 阶段分批出图」很容易被误做成「开两条 Bash / 两个子代理各跑一批」，后提交的那批直接失败。
+- 更隐蔽的一点：`latent.py` 只在**语音合成**里做了 429/503 重试，`image` 子命令没有——撞 409 立刻 `die`，`gen_portraits.py` 只能记一条 `[FAIL]` 继续下一张，图上就真的少了一张。
+- 现在的做法：① `gen_portraits.py` 用**全局锁** `<tmp>/novel_scan_gen.lock`（`O_CREAT|O_EXCL` + 每张图刷 mtime 心跳），第二个实例直接退出码 3 并打印持锁 pid/命令；2 小时没心跳视为僵尸锁自动接管，确认对方已死用 `--force-lock`。② 单张提交撞 409/429/503 自动退避重试（`--retries`，默认 4 次，20/40/60/60 秒），只有 `quota_exhausted` 不重试。
+- 教训：**「等待时间被隐藏」≠「可以并行」**。分批出图省的是墙钟时间（等接口时同时有写稿子代理在跑），不是让你把出图本身并发；判别方法很简单——同一时刻只允许存在一个持锁进程，跨书也一样。

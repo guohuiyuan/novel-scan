@@ -29,7 +29,10 @@ seed 策略（画风一致性的关键）：
 前提：
   - latent-media skill 已装好并且 keys.env 里有图像 key（lat_sk_ 开头）；
     或设环境变量 LATENT_IMAGE_KEY，或用 --key 临时给。
-  - 图像接口同一时刻只允许 1 个任务，所以本脚本串行跑，别并发。
+  - 图像接口同一时刻只允许 1 个任务：脚本内部串行，且用**全局锁**（默认
+    <tmp>/novel_scan_gen.lock）挡住第二个实例——两个进程同时提交会直接被
+    `409 too_many_active` 打回、那张图就白丢了。所以**不要并发跑两批**，
+    哪怕分属两本书；撞 409/429/503 会自动退避重试（--retries）。
 
 提示词约定（写进人物 JSON 的 appearance_prompt）：
   - 英文 Danbooru 风格 tag，逗号分隔，只写原文核验过的外形事实；
@@ -38,12 +41,15 @@ seed 策略（画风一致性的关键）：
   - 本脚本会自动补：人数/构图/画风/画质 tag 与负向词。
 """
 import argparse
+import atexit
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 
 STYLE = {
     # 实测（2026-11-18，曾柔三版对比）：这套 tag 出图最稳——正面、无手部畸形、无水印、
@@ -159,6 +165,89 @@ def safe_name(s):
     return re.sub(r'[\\/:*?"<>|\s]+', "_", s).strip("_") or "char"
 
 
+# 图像接口是账号级串行：同一 key 同时只能有 1 个渲染任务。两个进程都在提交时，
+# 后到的那个拿 409 too_many_active 直接失败——图丢了不算，还容易误判成「这角色出不来」。
+LOCK_PATH = os.path.join(tempfile.gettempdir(), "novel_scan_gen.lock")
+LOCK_STALE = 2 * 3600      # 2 小时没心跳就当是上次崩掉留下的锁
+
+
+def lock_acquire(path=LOCK_PATH, force=False):
+    """拿全局出图锁，拿不到就返回 False（调用方直接退出，不排队硬撞）。
+
+    跨进程互斥靠 O_CREAT|O_EXCL；判断「锁是不是僵尸」靠 mtime 心跳（每出一张刷一次）。
+    故意不去 kill(pid, 0) 探活：Windows 上 os.kill 走的是 TerminateProcess，会真把对方杀掉。
+    """
+    for attempt in (1, 2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - os.path.getmtime(path)
+                info = json.load(open(path, encoding="utf-8"))
+            except Exception:
+                age, info = LOCK_STALE + 1, {}
+            if attempt == 1 and (force or age > LOCK_STALE):
+                print("[warn] 清掉过期出图锁（%.0f 分钟前，pid=%s）：%s"
+                      % (age / 60, info.get("pid"), path))
+                lock_release(path)
+                continue
+            print("[ERROR] 另一个出图进程正在跑，先别开第二个。\n"
+                  "        锁文件：%s\n"
+                  "        持锁进程：pid=%s  命令：%s\n"
+                  "        已持锁 %.1f 分钟\n"
+                  "        等它结束即可；确认它已经死了就加 --force-lock（或删掉锁文件）。"
+                  % (path, info.get("pid"), info.get("cmd"), age / 60))
+            return False
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump({"pid": os.getpid(), "time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                       "cmd": " ".join(sys.argv[1:])[:300]}, f, ensure_ascii=False)
+        return True
+    return False
+
+
+def lock_touch(path=LOCK_PATH):
+    """心跳：每出一张刷新一次，避免长批次被后来的进程误判成僵尸锁。"""
+    try:
+        os.utime(path, None)
+    except OSError:
+        pass
+
+
+def lock_release(path=LOCK_PATH):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+TRANSIENT = ("too_many_active", "queue_full", "concurrent_limit", "429", "503",
+             "rate limit", "too many requests", "temporarily")
+
+
+def call_latent_retry(latent, key, prompt, negative, out_path, resolution, seed, steps,
+                      retries=4):
+    """撞上「队列里已经有任务」这类临时错误就退避重试，别把这张图直接判死。
+
+    latent.py 自己在 generate 这一步不做重试（只在语音合成里做），所以并发/排队
+    撞 409 会立刻抛错——这里兜住。真额度用尽（quota_exhausted）不重试，重试也没用。
+    """
+    waits = [20, 40, 60, 60]
+    last = None
+    for i in range(retries + 1):
+        try:
+            return call_latent(latent, key, prompt, negative, out_path,
+                               resolution, seed, steps)
+        except Exception as e:
+            last = e
+            msg = str(e).lower()
+            if "quota" in msg or i >= retries or not any(k in msg for k in TRANSIENT):
+                raise
+            w = waits[min(i, len(waits) - 1)]
+            print("  [retry %d/%d] %s —— %ds 后再提交" % (i + 1, retries, str(e)[:160], w))
+            time.sleep(w)
+    raise last
+
+
 def call_latent(latent, key, prompt, negative, out_path, resolution, seed, steps):
     cmd = [sys.executable, latent, "image",
            "--prompt", prompt, "--negative", negative,
@@ -204,6 +293,10 @@ def main():
     ap.add_argument("--seed-salt", type=int, default=0,
                     help="配 --seed-mode name：换个 salt 等于整本重摇一次，仍可复现")
     ap.add_argument("--steps", type=int, default=12)
+    ap.add_argument("--retries", type=int, default=4,
+                    help="撞 409/429/503 时的退避重试次数（默认 4；出图接口不能并发，排队很常见）")
+    ap.add_argument("--force-lock", action="store_true",
+                    help="强制接管出图锁（确认上一个进程已经死了再用）")
     ap.add_argument("--dry-run", action="store_true", help="只打印提示词，不调接口")
     ap.add_argument("--reindex", action="store_true",
                     help="不调接口，只按现有图片重建 _图片索引.json（断点续跑后修索引）")
@@ -314,6 +407,12 @@ def main():
         print("[OK] 重建索引 %d 条：%s" % (len(index), idx_path))
         return 0
 
+    # 真正要提交任务了才上锁：--dry-run / --reindex 不碰接口，不占锁。
+    if not a.dry_run:
+        if not lock_acquire(force=a.force_lock):
+            return 3
+        atexit.register(lock_release)     # 正常结束、异常退出、Ctrl-C 都会摘锁
+
     for i, ch in enumerate(chars, 1):
         name = ch.get("name") or "未命名"
         if not (ch.get("appearance_prompt") or "").strip():
@@ -351,12 +450,14 @@ def main():
                           else ch.get("signature_line")})
             continue
         try:
-            r = call_latent(a.latent, a.key, prompt, negative, out_path,
-                            a.resolution, seed, a.steps)
+            lock_touch()
+            r = call_latent_retry(a.latent, a.key, prompt, negative, out_path,
+                                  a.resolution, seed, a.steps, retries=a.retries)
         except Exception as e:
             fail += 1
             print("  [FAIL] %s" % e)
             continue
+        lock_touch()
         got = r.get("file") or out_path
         size = os.path.getsize(got) if os.path.exists(got) else 0
         print("  ok  seed=%s  %.0f KB  %s" % (r.get("seed"), size / 1024, got))
@@ -381,7 +482,8 @@ def main():
                   f, ensure_ascii=False, indent=1)
     print("\n[OK] 本次 %d 张，索引共 %d 条：%s" % (len(index), len(items), idx_path))
     if fail:
-        print("[WARN] %d 张失败，可能撞上 409 too_many_active 或额度用尽" % fail)
+        print("[WARN] %d 张失败：多为额度用尽或被别的出图进程占着（本脚本已退避重试 %d 次）；"
+              "直接重跑本命令即可续上，已出的图会 skip" % (fail, a.retries))
     return 0 if index else 2
 
 

@@ -64,7 +64,7 @@ scripts/
   render_characters_md.py     # JSON → 人物卡 Markdown（无行号版）
   render_characters_html.py   # JSON → 可视化 HTML（备用）
   render_tieba_cards.py       # md 原格式 → 贴吧手机端连图
-  gen_portraits.py            # 按 appearance_prompt 出人物图（latent.moe，要 key；seed 按角色名派生可复现）
+  gen_portraits.py            # 按 appearance_prompt 出人物图（latent.moe，要 key；seed 按角色名派生可复现；全局锁串行，勿并发）
   pick_cover.py                # 书评封面：公开图库随机 roll 一张 SFW 图（免 key）
   merge_sections.py           # 章节合并 + 目录锚点
   make_example.py             # 把一次输出做成 examples/<书名> 展示副本（人物图降采样）
