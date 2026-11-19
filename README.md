@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="logo.png" alt="novel-scan logo" width="200">
+</div>
+
 # novel-scan
 
 长篇网文扫书 Agent Skill —— 把一本 `.txt` 小说变成一套能直接发出去的扫书稿：
@@ -45,6 +49,7 @@ A0 脚本预扫（纯正则，秒级；切块 + 人物候选 + 外貌/雷点线�
 ## 文件结构
 
 ```
+logo.png                      # 项目 logo（README 顶部展示）
 SKILL.md                      # 主流程（Agent 读取的入口）
 references/
   leidian-taxonomy.md         # 雷点/郁闷点分类学（唯一判定口径）
