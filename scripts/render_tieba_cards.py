@@ -22,14 +22,17 @@
   --max-height 2600   单张最大逻辑高度
   --head slim|none    首图是否带一行小标题
   --dense             字号/行距收紧约 12%，长文档能少出几张
-  --per-folder 20     每 20 张一个子目录（贴吧单楼层 20 张上限）
+  --per-folder 0      默认不再分子目录：全部平铺在一个文件夹，编号跨 md 连续
+                      （要按贴吧 20 张上限分目录才传 --per-folder 20）
+  --floor-size 9      只在 _图片顺序.txt 里每 9 张标一次「第N楼」，不动文件结构
   --page-no           在图右下角标 "3 / 12"
   --merge             额外拼成一张无缝隙的全文长图
   --portraits-jpg     顺手把 人物图/*.webp 转成 立绘_jpg/*.jpg（贴吧老客户端不认 webp）
 
 插图：md 里的 ![](人物图/xx.webp) 会内嵌成 data URI 一起排版（相对路径按**第一个
 --md 所在目录**解析），限高 0.72×--max-height，所以"立绘 + 它的卡"通常能落在同一页。
-贴吧发帖建议 --dense --max-height 3000 --per-folder 20：3000×1.5=4500px，离 5680
+**多份 md 可以一次喂进来**（书评 + 人物卡），出一套编号连续的长图，不用分两个文件夹。
+贴吧发帖建议 --dense --max-height 3000 --floor-size 9：3000×1.5=4500px，离 5680
 上限还有余量；再往高试过 3600，个别页会顶到 5900px 超限。
 """
 import argparse
@@ -518,7 +521,10 @@ def main():
     ap.add_argument("--max-height", type=int, default=2600)
     ap.add_argument("--head", choices=["slim", "none"], default="slim")
     ap.add_argument("--dense", action="store_true")
-    ap.add_argument("--per-folder", type=int, default=0)
+    ap.add_argument("--per-folder", type=int, default=0,
+                    help="每 N 张一个子目录「第N楼」；默认 0 = 全部平铺在一个文件夹，编号连续")
+    ap.add_argument("--floor-size", type=int, default=0,
+                    help="只在 _图片顺序.txt 里按每 N 张标一次分楼（贴吧一楼 9 张），不动文件结构")
     ap.add_argument("--page-no", action="store_true")
     ap.add_argument("--merge", action="store_true", help="额外拼一张无缝隙全文长图")
     ap.add_argument("--portraits-jpg", action="store_true",
@@ -539,7 +545,12 @@ def main():
             parts = re.split(r"\s*[·｜|]\s*", title, maxsplit=1)
             main_title = parts[0].strip()
             sub_title = parts[1].strip() if len(parts) > 1 else ""
-        if idx == 0 and lead:
+        if idx > 0 and title and title.split("·")[0].strip() != main_title:
+            # 多份 md 合成一套图时，第二份起自己的 h1 会因"main_title 只取第一份"被吞掉，
+            # 书名不同就得补回一个 h2，否则读者不知道已经换了一篇。
+            atoms.append(Atom("## " + title, "h"))
+        if lead:
+            # 每份 md 的导语都保留：人物卡顶部那行「来源 / 生成时间 / 角色数」就靠它。
             for b in split_blocks("\n".join(lead)):
                 atoms.append(Atom(embed_images(b, base_dir), "b"))
         for stitle, level, chunk in secs:
@@ -672,13 +683,24 @@ def main():
         if mb > MAX_BYTES / 1024 / 1024:
             over_mb.append((os.path.basename(p), round(mb, 2)))
         print(f"   {os.path.basename(p)}  {w}×{h}px  {mb:.2f}MB")
-    print(f"[自检] 张数 {total}" + ("  ✅ ≤20" if total <= 20 else "  ⚠️ 超过 20 张，按 --per-folder 20 分楼发"))
+    if total <= 20:
+        note = "  ✅ ≤20，一楼能发完"
+    elif args.per_folder:
+        note = f"  ⚠️ {total} 张，已按每 {args.per_folder} 张分「第N楼」目录"
+    elif args.floor_size:
+        note = (f"  ⚠️ {total} 张，按一楼 {args.floor_size} 张算需 "
+                f"{(total - 1) // args.floor_size + 1} 楼（清单里已标楼）")
+    else:
+        note = f"  ⚠️ {total} 张，平铺在一个目录，发帖时自行切楼（可加 --floor-size 9）"
+    print(f"[自检] 张数 {total}" + note)
     print("[自检] 像素高 → " + (f"⚠️ 超出 {over_h}" if over_h else "✅ 全部合规"))
     print("[自检] 单张 5MB → " + (f"⚠️ 超出 {over_mb}" if over_mb else "✅ 全部合规"))
 
-    # 顺序清单（按文件名排序即阅读顺序）
+    # 顺序清单（按文件名排序即阅读顺序）；--floor-size 只在这里标分楼，不动文件结构
     with open(os.path.join(args.out, "_图片顺序.txt"), "w", encoding="utf-8") as f:
         for i, p in enumerate(outs, 1):
+            if args.floor_size and i > 1 and (i - 1) % args.floor_size == 0:
+                f.write("—— 第%d楼 ——\n" % ((i - 1) // args.floor_size + 1))
             f.write(f"{i:02d}  {os.path.relpath(p, args.out)}\n")
 
     # ---- 7) 可选：立绘转 jpg（贴吧老客户端不认 webp）----
