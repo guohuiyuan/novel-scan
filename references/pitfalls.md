@@ -164,3 +164,11 @@
 - 更隐蔽的一点：`latent.py` 只在**语音合成**里做了 429/503 重试，`image` 子命令没有——撞 409 立刻 `die`，`gen_portraits.py` 只能记一条 `[FAIL]` 继续下一张，图上就真的少了一张。
 - 现在的做法：① `gen_portraits.py` 用**全局锁** `<tmp>/novel_scan_gen.lock`（`O_CREAT|O_EXCL` + 每张图刷 mtime 心跳），第二个实例直接退出码 3 并打印持锁 pid/命令；2 小时没心跳视为僵尸锁自动接管，确认对方已死用 `--force-lock`。② 单张提交撞 409/429/503 自动退避重试（`--retries`，默认 4 次，20/40/60/60 秒），只有 `quota_exhausted` 不重试。
 - 教训：**「等待时间被隐藏」≠「可以并行」**。分批出图省的是墙钟时间（等接口时同时有写稿子代理在跑），不是让你把出图本身并发；判别方法很简单——同一时刻只允许存在一个持锁进程，跨书也一样。
+
+## 贴吧长图里带立绘：三个坑（2026-11-19，极品家丁）
+- 需求：书评/人物卡 md 里本来就有 `![](人物图/xx.webp)`（渲染 md 时插的），但 `render_tieba_cards.py` 原来只排字，`.webp` 一行会原样留成一行字。
+- 坑一：**Playwright 的 `set_content()` 没有 `base_url` 参数**（那是 Puppeteer 的），而 `set_content` 造的是 `about:blank` 文档，Chromium 不允许它读 `file://` 本地图。正解是把图片转成 **data URI 直接内嵌**（`embed_images()`），既绕开同源限制，也顺手解决了"截图时图片还没解码、量到 0 高度"。
+- 坑二：`is_plain_para()` 会把 `<img>` 块当普通长段落，交给 `chunk_text()` 按标点切——data URI 前缀里有 `;`，一刀下去 base64 就断成两截，图上出现破图标记。图片块必须显式排除在切分之外。
+- 坑三：**`--max-height` 不是越大越省张数**。实测 3600 时有 3 页顶到 5874/5979px，破 5680 上限（因为立绘 0.72×maxheight 之外还有卡片的文字）。3000（→4500px 输出）留足余量，是这本 336 万字 / 14 女主的最优档。
+- 环境坑：本机 `python`（WorkBuddy 托管 3.13）**没有 playwright/Pillow**，长图要用 `C:/Users/guohuiyuan/miniconda3/python.exe`；否则报 `ModuleNotFoundError: playwright`，容易误判成脚本写坏了。
+- 实测产出（`--dense --max-height 3000 --per-folder 20 --portraits-jpg`）：书评 30 张（20+10）、人物卡 43 张（20+20+3）、立绘 jpg 14 张（最大 0.31MB）——贴吧 4 楼发完。

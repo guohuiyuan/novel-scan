@@ -25,6 +25,12 @@
   --per-folder 20     每 20 张一个子目录（贴吧单楼层 20 张上限）
   --page-no           在图右下角标 "3 / 12"
   --merge             额外拼成一张无缝隙的全文长图
+  --portraits-jpg     顺手把 人物图/*.webp 转成 立绘_jpg/*.jpg（贴吧老客户端不认 webp）
+
+插图：md 里的 ![](人物图/xx.webp) 会内嵌成 data URI 一起排版（相对路径按**第一个
+--md 所在目录**解析），限高 0.72×--max-height，所以"立绘 + 它的卡"通常能落在同一页。
+贴吧发帖建议 --dense --max-height 3000 --per-folder 20：3000×1.5=4500px，离 5680
+上限还有余量；再往高试过 3600，个别页会顶到 5900px 超限。
 """
 import argparse
 import html
@@ -118,11 +124,17 @@ body.dense blockquote p{font-size:27px}
 body.dense .tcard .row .v{font-size:27px}
 body.dense table{font-size:25px}
 body.dense th,body.dense td{font-size:25px;padding:13px 15px}
+
+/* 插图（人物立绘）：等比缩放、居中、限高。限高是为了让"一张立绘 + 它的卡"能落进同
+   一页——立绘本身 920×1536，等比铺满 1080 宽会到 1800px，再加一整段文字就翻页了。 */
+#content img{display:block;width:auto;max-width:100%;max-height:__IMGH__px;
+     margin:20px auto 8px;border-radius:16px;background:#f4f6fa}
 """
 
 
-def build_css(w, dense):
-    css = CSS_TPL.replace("__W__", str(w))
+def build_css(w, dense, max_h=2600):
+    # 立绘限高：占一页的 0.72，剩下的留给标题/正文，避免"图占满一页、卡全被挤到下一页"
+    css = CSS_TPL.replace("__W__", str(w)).replace("__IMGH__", str(int(max_h * 0.72)))
     return css
 
 
@@ -346,6 +358,9 @@ def is_plain_para(md):
         return False
     if md.lstrip().startswith("|") or md.lstrip().startswith("#"):
         return False
+    # 图片块绝不能当长段落切：data URI 里有 ';'，按标点切会把 base64 拦腰截断
+    if "<img" in md or md.lstrip().startswith("!["):
+        return False
     if any(BULLET.match(l) for l in lines):
         return False
     return True
@@ -396,11 +411,100 @@ MEASURE_JS = """() => {
   });
 }"""
 
+# md 里的 ![](人物图/xx.webp) 是相对路径，set_content 不带 base_url 就全裂；
+# 而且图片是异步解码的，不 await 就量高度会量到 0，分页/截图会少一块。
+WAIT_IMG_JS = """async () => {
+  const imgs = Array.from(document.images);
+  await Promise.all(imgs.map(i => (i.complete ? Promise.resolve()
+      : new Promise(r => { i.onload = r; i.onerror = r; }))));
+  return [imgs.length, imgs.filter(i => !i.naturalWidth).map(i => i.getAttribute('src'))];
+}"""
+
+
+def md_base_url(md_path):
+    """md 所在目录 —— 相对图片路径按它解析。"""
+    return os.path.dirname(os.path.abspath(md_path))
+
+
+IMG_MD = re.compile(r"!\[([^\]]*)\]\(\s*([^)\s]+)\s*\)")
+MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".webp": "image/webp", ".gif": "image/gif"}
+
+
+def embed_images(md, base_dir):
+    """把 ![](相对路径) 换成 data URI。
+
+    set_content 造的是 about:blank 文档，Chromium 不允许它读 file:// 本地资源
+    （Puppeteer 的 base_url 参数 Playwright 没有），所以图片只能内嵌成 data URI；
+    顺带也免了截图时图片还没解码完就量到 0 高度。
+    """
+    import base64
+    miss = []
+
+    def rep(m):
+        alt, src = m.group(1), m.group(2)
+        if src.startswith(("data:", "http://", "https://")):
+            return m.group(0)
+        p = src if os.path.isabs(src) else os.path.join(base_dir, src)
+        if not os.path.exists(p):
+            miss.append(src)
+            return ""                       # 缺图就整段去掉，别在图里留一行空 src 文本
+        ext = os.path.splitext(p)[1].lower()
+        with open(p, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return '<img alt="%s" src="data:%s;base64,%s">' % (
+            esc(alt), MIME.get(ext, "image/jpeg"), b64)
+
+    out = IMG_MD.sub(rep, md)
+    if miss:
+        print("[warn] 找不到图片（已从版式中去掉）：%s" % "、".join(miss[:5]))
+    return out
+
+
+def wait_images(pg):
+    try:
+        n, broken = pg.evaluate(WAIT_IMG_JS)
+    except Exception:
+        return 0, []
+    return n, broken
+
 
 def measure(pg, css, head, atoms, dense):
     pg.set_content(page_doc(css, head, atoms, dense))
+    wait_images(pg)
     pg.wait_for_timeout(120)
     return pg.evaluate(MEASURE_JS)
+
+
+def convert_portraits(base_dir, out_dir):
+    """人物图/*.webp → <out>/立绘_jpg/*.jpg。
+
+    贴吧网页版能显示 webp，但老客户端/部分楼中楼会转成裂图，发图前统一转 jpg 最省事。
+    """
+    src = os.path.join(base_dir, "人物图")
+    if not os.path.isdir(src):
+        print("[jpg] 跳过：%s 不存在" % src)
+        return []
+    try:
+        from PIL import Image
+    except ImportError:
+        print("[jpg] 跳过：未安装 Pillow")
+        return []
+    dst_dir = os.path.join(out_dir, "立绘_jpg")
+    os.makedirs(dst_dir, exist_ok=True)
+    outs = []
+    for fn in sorted(os.listdir(src)):
+        if not fn.lower().endswith(".webp"):
+            continue
+        im = Image.open(os.path.join(src, fn)).convert("RGB")
+        d = os.path.join(dst_dir, os.path.splitext(fn)[0] + ".jpg")
+        im.save(d, quality=92, optimize=True, progressive=True)
+        outs.append(d)
+    if outs:
+        mb = max(os.path.getsize(p) for p in outs) / 1024 / 1024
+        print("[jpg] %d 张立绘 → %s（最大 %.2fMB%s）"
+              % (len(outs), dst_dir, mb, "" if mb <= 5 else "  ⚠️ 超过 5MB"))
+    return outs
 
 
 def main():
@@ -417,10 +521,13 @@ def main():
     ap.add_argument("--per-folder", type=int, default=0)
     ap.add_argument("--page-no", action="store_true")
     ap.add_argument("--merge", action="store_true", help="额外拼一张无缝隙全文长图")
+    ap.add_argument("--portraits-jpg", action="store_true",
+                    help="顺手把 md 同目录 人物图/*.webp 转成 jpg（贴吧老客户端不认 webp）")
     args = ap.parse_args()
 
     W, SCALE, MAXH = args.width, args.scale, args.max_height
-    css = build_css(W, args.dense)
+    css = build_css(W, args.dense, MAXH)
+    base_dir = md_base_url(args.md[0])
 
     # ---- 1) md → atoms（小节标题本身也作为正文 h2/h3 保留）----
     atoms, main_title, sub_title = [], "", ""
@@ -434,14 +541,14 @@ def main():
             sub_title = parts[1].strip() if len(parts) > 1 else ""
         if idx == 0 and lead:
             for b in split_blocks("\n".join(lead)):
-                atoms.append(Atom(b, "b"))
+                atoms.append(Atom(embed_images(b, base_dir), "b"))
         for stitle, level, chunk in secs:
             if args.skip and stitle.strip() == args.skip:
                 continue
             marker = "#" * level
             atoms.append(Atom(f"{marker} {stitle}", "h", classify(stitle)))
             for b in split_blocks("\n".join(chunk)):
-                atoms.append(Atom(b, "b", classify(stitle)))
+                atoms.append(Atom(embed_images(b, base_dir), "b", classify(stitle)))
     if not atoms:
         raise SystemExit("没有可渲染的内容")
 
@@ -466,6 +573,10 @@ def main():
         chunk_limit = max(200, int(chars_per_line * lines_per_page * 0.45))
 
         spans = measure(pg, css, head, atoms, args.dense)
+        _, broken = wait_images(pg)
+        if broken:
+            print("[warn] 有 %d 张图加载失败（相对路径不对或文件缺失）：%s"
+                  % (len(broken), "、".join(broken[:5])))
         final = []
         for a, (top, bot) in zip(atoms, spans):
             h = bot - top
@@ -537,6 +648,7 @@ def main():
             pno = f"{no} / {total}" if args.page_no else None
             pg.set_content(page_doc(css, head if no == 1 else "", [final[i] for i in idxs],
                                     args.dense, pno))
+            wait_images(pg)
             pg.wait_for_timeout(80)
             pg.query_selector("#page").screenshot(path=dst)
             outs.append(dst)
@@ -569,7 +681,11 @@ def main():
         for i, p in enumerate(outs, 1):
             f.write(f"{i:02d}  {os.path.relpath(p, args.out)}\n")
 
-    # ---- 7) 可选：拼成一张无缝长图 ----
+    # ---- 7) 可选：立绘转 jpg（贴吧老客户端不认 webp）----
+    if args.portraits_jpg:
+        convert_portraits(base_dir, args.out)
+
+    # ---- 8) 可选：拼成一张无缝长图 ----
     if args.merge:
         try:
             from PIL import Image
