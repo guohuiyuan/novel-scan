@@ -8,7 +8,7 @@ https://latent.moe 文生图，落地到 <输出目录>/人物图/<角色名>.we
 
 用法：
   python gen_portraits.py --json <书名>_人物数据.json --out <输出目录> \
-      [--only 曾柔,于紫彤] [--top 12] [--style anime|watercolor|realistic] \
+      [--only 曾柔,于紫彤] [--top 12] [--style yujie|anime|watercolor|realistic] \
       [--resolution portrait] [--seed-mode name|random|fixed] [--seed-salt 0] \
       [--seed 1234] [--dry-run] \
       [--latent <latent.py 路径>] [--key lat_sk_xxx]
@@ -57,14 +57,36 @@ STYLE = {
          "film grain", "simple background", "masterpiece", "best quality"],
         ["anime", "cartoon", "illustration", "3d render", "cgi"],
     ),
+    # 羽劫（latent.moe/art/c624f56c-36c6-4157-bb15-f4afb93caba2）的柔光 3D 游戏 CG 风：
+    # 细腻皮肤 + 次表面散射 + 平滑上色，配下面那组加权画师 tag。
+    # 与 anime 的关键差别是「soft 3d game cg / detailed skin」而不是赛璐璐平涂。
+    "yujie": (
+        ["year 2024", "year 2025", "year 2026", "highres", "absurdres",
+         "score_9", "score_8", "score_7", "very aesthetic", "ultra detailed",
+         "detailed rendering", "high fidelity", "anime style", "film composition",
+         "dynamic perspective", "soft lighting", "subsurface scattering",
+         "proportionate figure", "anatomical correctness", "vivid facial expressions",
+         "(detailed skin:1.5)", "(soft 3d game cg:1.05)", "(smooth shading:1.05)",
+         "(softly lit face:1.05)", "masterpiece", "best quality"],
+        ["score_1", "score_2", "score_3", "score_4", "score_5", "score_6", "lowres",
+         "blurry", "bad anatomy", "bad proportions", "bad hands", "extra fingers",
+         "missing fingers", "deformed", "watermark", "signature", "text", "logo",
+         "username", "artifacts", "noise", "dirty", "compression artifacts", "oversmooth",
+         "loss of detail", "oversharpened", "flat color", "cell shaded", "western comic",
+         "cartoon", "3d render", "3dcg", "photorealistic", "live action", "mosaic",
+         "bar censor", "pixelated", "messy composition", "cluttered", "inconsistent style",
+         "jpeg artifacts"],
+    ),
 }
 
 BASE_POS = ["1girl", "solo", "upper body", "looking at viewer", "arms at sides",
             "standing", "detailed face", "beautiful detailed eyes"]
 
-# 画师 tag：放在角色 tag 之前，权重足。morikura_en = 森仓円，干净通透的萌系少女上色，
+# 画师 tag：放在角色 tag 之前，权重足。用羽劫那张参考图的加权画师组合，
+# 单独一个 morikura_en 出的是扁平萌系，和柔光 3D 游戏 CG 不是一个路子。
 # 负向词里必须去掉「artist name」（否则和这里的画师 tag 打架）。
-DEFAULT_ARTIST = "morikura_en"
+DEFAULT_ARTIST = ("(@tani takeshi:0.8), (@ruu (tksymkw):0.65), (@akkijin:1.1), "
+                  "(@aki99:1.2), (@kotomaru (kotokoto kottan):1.4)")
 
 # 男主用这套（1girl 换 1boy，眼睛 tag 换成男性向的写法）
 BASE_POS_MALE = ["1boy", "solo", "upper body", "looking at viewer", "arms at sides",
@@ -180,9 +202,10 @@ def main():
                     help="男主也出图（排 00，默认开）")
     ap.add_argument("--no-male", dest="with_male", action="store_false",
                     help="不画男主")
-    ap.add_argument("--style", default="anime", choices=sorted(STYLE))
+    ap.add_argument("--style", default="yujie", choices=sorted(STYLE),
+                    help="yujie=羽劫柔光 3D 游戏 CG（默认）；anime=旧版赛璐璐；watercolor/realistic 备用")
     ap.add_argument("--artist", default=DEFAULT_ARTIST,
-                    help="画师 tag（默认 morikura_en；传 none 关掉）")
+                    help="画师权重组合（默认羽劫参考图那组；传 none 关掉）")
     ap.add_argument("--resolution", default="portrait",
                     choices=["square", "portrait", "landscape"])
     ap.add_argument("--seed", type=int, help="固定种子（配 --seed-mode fixed；所有角色同一 seed 会让构图趋同，慎用）")
