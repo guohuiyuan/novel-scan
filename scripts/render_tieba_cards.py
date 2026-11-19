@@ -28,6 +28,7 @@
   --page-no           在图右下角标 "3 / 12"
   --merge             额外拼成一张无缝隙的全文长图
   --portraits-jpg     顺手把 人物图/*.webp 转成 立绘_jpg/*.jpg（贴吧老客户端不认 webp）
+  --no-img            不内嵌 md 里的立绘：6.3 万字两篇实测 73 张 → 54 张
 
 插图：md 里的 ![](人物图/xx.webp) 会内嵌成 data URI 一起排版（相对路径按**第一个
 --md 所在目录**解析），限高 0.72×--max-height，所以"立绘 + 它的卡"通常能落在同一页。
@@ -434,8 +435,8 @@ MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".webp": "image/webp", ".gif": "image/gif"}
 
 
-def embed_images(md, base_dir):
-    """把 ![](相对路径) 换成 data URI。
+def embed_images(md, base_dir, keep=True):
+    """把 ![](相对路径) 换成 data URI；keep=False 时整段丢掉（--no-img）。
 
     set_content 造的是 about:blank 文档，Chromium 不允许它读 file:// 本地资源
     （Puppeteer 的 base_url 参数 Playwright 没有），所以图片只能内嵌成 data URI；
@@ -446,6 +447,8 @@ def embed_images(md, base_dir):
 
     def rep(m):
         alt, src = m.group(1), m.group(2)
+        if not keep:
+            return ""
         if src.startswith(("data:", "http://", "https://")):
             return m.group(0)
         p = src if os.path.isabs(src) else os.path.join(base_dir, src)
@@ -527,6 +530,8 @@ def main():
                     help="只在 _图片顺序.txt 里按每 N 张标一次分楼（贴吧一楼 9 张），不动文件结构")
     ap.add_argument("--page-no", action="store_true")
     ap.add_argument("--merge", action="store_true", help="额外拼一张无缝隙全文长图")
+    ap.add_argument("--no-img", dest="img", action="store_false",
+                    help="不内嵌 md 里的立绘（少 2-3 成页数；立绘可另开一楼发）")
     ap.add_argument("--portraits-jpg", action="store_true",
                     help="顺手把 md 同目录 人物图/*.webp 转成 jpg（贴吧老客户端不认 webp）")
     args = ap.parse_args()
@@ -552,16 +557,20 @@ def main():
         if lead:
             # 每份 md 的导语都保留：人物卡顶部那行「来源 / 生成时间 / 角色数」就靠它。
             for b in split_blocks("\n".join(lead)):
-                atoms.append(Atom(embed_images(b, base_dir), "b"))
+                atoms.append(Atom(embed_images(b, base_dir, args.img), "b"))
         for stitle, level, chunk in secs:
             if args.skip and stitle.strip() == args.skip:
                 continue
             marker = "#" * level
             atoms.append(Atom(f"{marker} {stitle}", "h", classify(stitle)))
             for b in split_blocks("\n".join(chunk)):
-                atoms.append(Atom(embed_images(b, base_dir), "b", classify(stitle)))
+                atoms.append(Atom(embed_images(b, base_dir, args.img), "b", classify(stitle)))
     if not atoms:
         raise SystemExit("没有可渲染的内容")
+    if not args.img:
+        n = sum(len(IMG_MD.findall(open(p, encoding="utf-8").read())) for p in args.md)
+        if n:
+            print("[img] --no-img：跳过 %d 处插图（立绘可另开一楼发）" % n)
 
     head = ""
     if args.head == "slim" and main_title:
@@ -638,6 +647,25 @@ def main():
         for i in range(len(pages) - 1):
             while len(pages[i]) > 1 and final[pages[i][-1]].kind == "h":
                 pages[i + 1].insert(0, pages[i].pop())
+
+        # 兜底：上面两步都会在装箱之后再挪块，可能把某页顶过 MAXH（实测人物卡有一次
+        # 到 3951px，出图 5927px，破了贴吧 5680 上限）。这里按块高重新切，直到全部合规。
+        changed = True
+        while changed:
+            changed = False
+            for n, idxs in enumerate(pages):
+                h = spans[idxs[-1]][1] - spans[idxs[0]][0]
+                if h <= MAXH or len(idxs) < 2:
+                    continue
+                cut = 1
+                for k in range(1, len(idxs)):
+                    if spans[idxs[k]][1] - spans[idxs[0]][0] > MAXH:
+                        break
+                    cut = k + 1
+                pages[n] = idxs[:cut]
+                pages.insert(n + 1, idxs[cut:])
+                changed = True
+                break
 
         if os.environ.get("SCAN_DEBUG"):
             print("[dbg] atoms", len(final), "spans", len(spans), spans[:6])
