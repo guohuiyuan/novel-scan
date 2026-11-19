@@ -163,6 +163,20 @@ def main():
     print(f"   分维度点评：{len(dims)} 段" + ("  ✅" if not miss_d else f"  [缺失] {'、'.join(miss_d)}"))
     if not (mp.get("name") and (mp.get("arc") or "").strip()):
         print("   [缺失] 男主卡无 arc（书评「男主」段会写不出来）")
+    if not (mp.get("identity") or "").strip():
+        print("   [缺失] 男主卡无 identity（书评男主段会缺「身份」这一行）")
+    # 男主段字段完整性：早期为躲 identity/arc 重复，把 identity 整段砍了，
+    # 书评里男主只剩经历段落，读者看不出这人什么来头。
+    _rev = next((d for d in (a.docs or []) if "书评" in os.path.basename(d) and os.path.exists(d)), None)
+    if _rev:
+        _txt = open(_rev, encoding="utf-8").read()
+        _i = _txt.find("\n## 男主")
+        if _i != -1:
+            _j = _txt.find("\n## ", _i + 6)
+            _blk = _txt[_i:_j if _j != -1 else len(_txt)]
+            _missf = [f for f in ("**身份**", "**外貌**", "**经历**", "**性格**") if f not in _blk]
+            print("   男主段字段：" + ("身份 / 外貌 / 经历 / 性格 齐  ✅" if not _missf
+                                      else f"  [缺失] {'、'.join(_missf)}"))
 
     # ---- 2d) 书评标题与封面 ----
     print("\n== 2d. 书评标题与封面 ==")

@@ -352,15 +352,19 @@ def render(data, img_dir=None, images=True, cover=""):
         out += ["## 男主", "", f"### {male['name']}", ""]
         arc = clean(male.get("arc") or male.get("growth"))
         ident = clean(male.get("identity"))
+        # 字段口径与女主一致：身份 → 外貌 → 经历 → 性格。
+        # 曾经「有 arc 就整段丢掉 identity」，男主的身份定位（几代弟子/什么来头）就全没了；
+        # 但 identity 全文和 arc 讲的是同一条线，所以只取第一句、且只留分号前的定位部分。
         if arc:
-            # arc 本身就是「开局身份→起势→终局」，identity 再写一遍会整段重复
-            emit_paras(out, arc)
-        elif ident:
-            emit_paras(out, ident)
-        if not arc and ident:
-            out += [f"**身份**：{endp(first_sent(ident))}", ""]
+            ident = first_sent(ident).split("；")[0].strip()
+        if ident:
+            out += [f"**身份**：{endp(ident)}", ""]
         if clean(male.get("appearance")):
             out += [f"**外貌**：{endp(male['appearance'])}", ""]
+        if arc:
+            emit_paras(out, arc, label="经历")
+        elif ident:
+            out += [f"**经历**：{endp(ident)}", ""]
         if clean(male.get("personality")):
             out += [f"**性格**：{endp(male['personality'])}", ""]
         sl = male.get("signature_line")
