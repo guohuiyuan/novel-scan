@@ -154,11 +154,11 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
 6. 可选：**人物图**（按外貌反推出图，做扫书视频的立绘）。**男主默认一起出（排 `00`）**。书评第一屏那张封面**不是这里出的**（走 `pick_cover.py`，见「书评标题与封面」）。
    ```bash
    python <skill>/scripts/gen_portraits.py --json <人物数据.json> --out <输出目录> \
-       --style yujie   # 默认：羽劫柔光 3D 游戏 CG；旧版赛璐璐可用 --style anime
+       --style anime --artist morikura_en   # anime | watercolor | realistic
        # seed 默认按角色名派生（可复现）；要整本重摇加 --seed-salt 1
    ```
-   - **默认画风（2026-11-19 改）**：参考 [羽劫主页](https://latent.moe/u/3142dcb6-7d3e-4a64-a871-51359d6ec130) 与 [这张作品](https://latent.moe/art/c624f56c-36c6-4157-bb15-f4afb93caba2)——细腻皮肤、次表面散射、柔光平滑上色（`soft 3d game cg, detailed skin, smooth shading`），不是 `morikura_en` 那种扁平萌系。实现为 `--style yujie`（默认）+ `--artist` 那组**加权画师 tag**（`tani takeshi / ruu / akkijin / aki99 / kotomaru`，权重照参考图）；整体构图仍是 `upper body + portrait` 胸像，方便做视频封面。
-   - `--artist` 默认就是上面那组加权画师 tag，放在角色 tag 之前；**指定画师时脚本会自动从负向词里去掉 `artist name` / `copyright name`**，否则两者打架、画风被压平。传 `--artist none` 关掉；旧画风用 `--style anime --artist morikura_en`。
+   - **默认画风：morikura_en（森仓円，干净通透的萌系上色）**，放在角色 tag 之前；**指定画师时脚本会自动从负向词里去掉 `artist name` / `copyright name`**，否则两者打架、画风被压平。传 `--artist none` 关掉。画师风格偏好特写：`upper body + portrait` 在 morikura_en 下会出到胸像，做视频封面够用；要更远就删 `portrait` tag。
+   - **别频繁换全局画风**：2026-11-19 拿四张 latent 参考图试过柔光 CG / anima 细线 / tawawa 柔蓝 / polished 插画，同角色同 seed 对比下来都不如 morikura_en 稳；用户结论是「换了画风还是一般，问题在服饰发型搭配」。**单张不好看先改那个角色的 `appearance_prompt`**（一套衣服 + 一个发型、颜色写死），不要动全局 `--style` / `--artist`。
    - **画风统一与 seed（2026-11-18 实测）**：画风由「画师 tag + 公共构图/画质 tag + 同一套负向词」锚定，三者对全部角色一致；**真正导致同批图风格漂移的是 seed**——同一角色、同一 prompt，只换 seed 就能一张出九〇年代复古赛璐璐、一张出当代 anime。故 `--seed-mode` 默认 `name`：**按角色名派生固定 seed**（`name_seed()`，sha256 前 13 位），同一本书重跑出同一批图、各角色构图又互不相同；整本想重摇换 `--seed-salt N`（仍可复现）；只想随机探索用 `--seed-mode random`。`--seed-mode fixed --seed 1234` 是旧行为，会让 12 张构图趋同，慎用。索引里逐张记下真实 seed，任何一张都能单独复现。
    - **正负向词冲突会静默毁掉画风**：角色 `appearance_prompt` 里若写了 `realistic` / `photorealistic`（常见于原文写「写实」「真实感」），而它们正好在本画风的负向列表里，同一 tag 既正向又负向，出图就在两种风格间掷硬币。`build_prompt()` 现在会**自动剔除**这类 tag 并打印 `[warn]`——看到 warn 就把那句话换个说法（如「写实」→ `detailed face`），别留着让模型猜。
    - 一键成组的自检：12 张出完后拼联系表目检（`PIL` 六列拼图），**逐张看线条粗细/上色方式/脸部比例是否同代**；有一张特立独行就 `--only <名> --seed-salt N` 单张重摇。

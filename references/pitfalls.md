@@ -148,7 +148,7 @@
 - 修法：在 `references/subagent-prompt.md` 模板二（和分块任务书一样）开头加「边界说明」——只取事实层、不复述露骨描写；重写时附上该说明即通过。
 - 教训：B 阶段任务书早有边界说明，C 阶段模板漏了；**长流水线里每一类子代理都要自带边界说明**，不能假设它继承上一阶段的上下文。
 
-## 画风默认值从 morikura_en 改为羽劫柔光 CG（2026-11-19）
-- 用户给的参考：[羽劫主页](https://latent.moe/u/3142dcb6-7d3e-4a64-a871-51359d6ec130) 与 [单张作品](https://latent.moe/art/c624f56c-36c6-4157-bb15-f4afb93caba2)。那张的 prompt 不是单一画师，而是一组**加权画师 tag**：`(@tani takeshi:0.8), (@ruu (tksymkw):0.65), (@akkijin:1.1), (@aki99:1.2), (@kotomaru (kotokoto kottan):1.4)`，加 `soft 3d game cg, detailed skin:1.5, smooth shading, subsurface scattering`。
-- 只把 `morikura_en` 换成某个画师名出不来这个效果——前者是扁平萌系赛璐璐，后者是柔光半写实 CG。现在实现为 `--style yujie`（默认）+ 上面的加权组合；旧版仍可 `--style anime --artist morikura_en`。
-- 试出样图（肖青璇、同样 seed）确认从"平涂动漫"变成"细腻皮肤 + 柔光 CG"，无水印、无崩手；**权重组合写在 `DEFAULT_ARTIST` 一个字符串里**，`dedupe()` 按逗号切分时不会拆坏括号。
+## 画风折腾一圈又回到 morikura_en（2026-11-19）
+- 用户连续给了四张 latent.moe 参考图（柔光 CG、anima 细线、tawawa 柔蓝、polished 插画），每张都拆了 prompt、出同角色同 seed 小样对比。**最终结论：换了画风还是一般，morikura_en 没问题，观感主要卡在「服饰发型搭配」**。
+- 处理：默认画风回退到 `morikura_en`，`gen_portraits.py` 恢复到 28f3e6e 版本（撤销 a54842d 的 yujie 默认与加权画师串）。SKILL.md 里改成「别频繁换全局画风，单张不好看先改那个角色的 `appearance_prompt`」。
+- 教训：**全局画风是最显眼也最不该反复动的旋钮**。同 seed 的 A/B 小样只能证明「风格变了」，证明不了「变好看了」；单张图不搭通常是该角色服装/发型的 tag 组合问题，改单人 prompt 成本更低、也不会拖累整批的一致性。
