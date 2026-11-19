@@ -24,6 +24,9 @@ import sys
 
 ROW = re.compile(r"^\s*\|(.*)\|\s*$")
 SEP = re.compile(r"^[\s|:-]+$")
+# 任务书里的「出场角色表」实际是列表写法（`- 名字（别名）：本块做了什么`），
+# 早期只认 markdown 表格，导致整本笔记解析出 0 个人（2026-11-19 极品家丁实测）。
+BULLET = re.compile(r"^\s*[-*]\s*(.+)$")
 
 
 def parse_notes(notes_dir):
@@ -41,22 +44,36 @@ def parse_notes(notes_dir):
             if not in_sec:
                 continue
             m = ROW.match(s)
-            if not m or SEP.match(s):
-                continue
-            cells = [c.strip() for c in m.group(1).split("|")]
-            if len(cells) < 3:
-                continue
-            name = cells[0]
+            if m and not SEP.match(s):
+                cells = [c.strip() for c in m.group(1).split("|")]
+                if len(cells) < 3:
+                    continue
+                name, role, first = cells[0], cells[1], (cells[3] if len(cells) > 3 else "")
+                is_first = first.startswith("是")
+            else:
+                b = BULLET.match(s)
+                if not b:
+                    continue
+                body = b.group(1).strip()
+                if "：" in body:
+                    head, role = body.split("：", 1)
+                elif ":" in body:
+                    head, role = body.split(":", 1)
+                else:
+                    head, role = body, ""
+                name = head.strip().strip("*").strip()
+                role = role.strip()
+                is_first = "首次出场" in role
+                if not name or "无" == name or len(name) > 40:
+                    continue
             if not name or name in ("姓名", "---") or set(name) <= set("-: "):
                 continue
             infos = people.setdefault(name, {"blocks": [], "roles": [], "first": []})
             if block not in infos["blocks"]:
                 infos["blocks"].append(block)
-            role = cells[1] if len(cells) > 1 else ""
             if role and role not in infos["roles"]:
                 infos["roles"].append(role)
-            first = cells[3] if len(cells) > 3 else ""
-            if first.startswith("是") and block not in infos["first"]:
+            if is_first and block not in infos["first"]:
                 infos["first"].append(block)
     return people
 
