@@ -99,6 +99,14 @@ BASE_NEG = (
 
 DEFAULT_LATENT = os.path.expanduser("~/.workbuddy/skills/latent-media/scripts/latent.py")
 
+# 衣物印花/字母类 tag：模型会认真去画那个图案和字，顺手把上色拉粗、线条变糙，还可能画出
+# 假字母（实测出过「KM'SO」）。《我才》熊瑶月那张就是 `number 3 print on shirt` +
+# `small crown motif` 把整张图带去少年热血漫方向，跟同批另外 9 张不同代。
+PRINT_ART = re.compile(
+    r"(?:number|no\.?)\s*\d+\s*print|print on \w+|printed \w+|graphic tee|logo|lettering|"
+    r"emblem|motif", re.I)
+
+
 
 def dedupe(tags):
     seen, out = set(), []
@@ -120,11 +128,14 @@ def neg_set(style):
 
 
 def build_prompt(ch, style, male=False, artist=DEFAULT_ARTIST):
-    """返回 (正向, 负向, 被丢掉的自相矛盾 tag)。
+    """返回 (正向, 负向, 被丢掉的自相矛盾 tag, 衣物印花/字母 tag)。
 
     第三项是画风漂移的头号原因：角色自己的 appearance_prompt 里写了
     `realistic` / `photorealistic`，而这些词正好在本画风的负向列表里——
     同一 tag 既正向又负向，模型只能掷硬币，出图就会一半赛璐璐一半写实。
+
+    第四项只告警不删：印花是原文事实（T恤上印着 3 号），删了失真，但得让人知道
+    它会把上色拉粗；要不要留由调用者决定。
     """
     own = [t.strip() for t in re.split(r"[,，]", (ch.get("appearance_prompt") or "")) if t.strip()]
     style_pos, style_neg = STYLE[style]
@@ -142,6 +153,7 @@ def build_prompt(ch, style, male=False, artist=DEFAULT_ARTIST):
         else:
             kept.append(t)
     art = [artist] if artist and artist.lower() not in ("none", "no") else []
+    bad_art = [t for t in kept if PRINT_ART.search(t)]
     tags = dedupe(art + base + kept + style_pos)
     neg = list(dedupe([BASE_NEG] + style_neg))
     if art:
@@ -149,7 +161,7 @@ def build_prompt(ch, style, male=False, artist=DEFAULT_ARTIST):
         neg = [t for t in neg if t not in ("artist name", "copyright name")]
     if male:
         neg = [t for t in neg if t not in ("multiple girls",)] + ["multiple girls", "female focus"]
-    return ", ".join(tags), ", ".join(dedupe(neg)), dropped
+    return ", ".join(tags), ", ".join(dedupe(neg)), dropped, bad_art
 
 
 def name_seed(name, salt=0):
@@ -393,9 +405,13 @@ def main():
                    if f.endswith(".webp") and safe_name(name) in f]
             if not hit:
                 continue
-            prompt, _, dropped = build_prompt(ch, a.style, male=(name == male_name), artist=a.artist)
+            prompt, _, dropped, badart = build_prompt(ch, a.style, male=(name == male_name),
+                                                      artist=a.artist)
             if dropped:
                 print("  [warn] %s 的 appearance_prompt 含与画风负向词冲突的 tag：%s" % (name, dropped))
+            if badart:
+                print("  [warn] %s 写了衣物印花/字母 tag：%s（会把上色拉粗、可能画出假文字）"
+                      % (name, ", ".join(badart)))
             index.append({"name": name, "file": sorted(hit)[0], "seed": None,
                           "artwork_id": None, "prompt": prompt})
         idx_path = os.path.join(img_dir, "_图片索引.json")
@@ -418,12 +434,15 @@ def main():
         if not (ch.get("appearance_prompt") or "").strip():
             print("[SKIP] %s：没有 appearance_prompt（先让子代理按模板三写）" % name)
             continue
-        prompt, negative, dropped = build_prompt(ch, a.style, male=(name == male_name),
-                                                artist=a.artist)
         print("\n[%d/%d] %s" % (i, len(chars), name))
+        prompt, negative, dropped, badart = build_prompt(ch, a.style, male=(name == male_name),
+                                                         artist=a.artist)
         if dropped:
             print("  [warn] 丢掉与画风负向词冲突的 tag：%s（改 appearance_prompt 时换个说法）"
                   % ", ".join(dropped))
+        if badart:
+            print("  [warn] 衣物印花/字母 tag 会把上色拉粗、还可能画出假文字：%s"
+                  "（能省则省，改成纯色或材质描述）" % ", ".join(badart))
         print("  prompt: %s" % prompt)
         if a.dry_run:
             continue

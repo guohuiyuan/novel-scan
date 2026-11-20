@@ -10,7 +10,7 @@ novel-scan: make_example.py —— 把一次真实输出做成 `examples/<书名
     md / json 逐字保留（图片用相对路径，目录结构照搬，链接不断）。
 
 用法：
-  python make_example.py --src <某本书的输出目录> --dst examples/都市良人行
+  python make_example.py --src <某本书的输出目录> --dst examples/<书名>
   python make_example.py --src <输出目录> --dst examples/xxx --max-width 480 --quality 78
   python make_example.py --src <输出目录> --dst examples/xxx --no-intermediates
 

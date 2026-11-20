@@ -15,17 +15,17 @@ description: |
 
 ## 成品长什么样（动手前先看样例）
 
-`<skill>/examples/都市良人行/` 是一本 111 万字 txt 跑完的**完整真实产物**（图片已降采样，全目录 0.9MB 以内）：
+`<skill>/examples/我才不会被女孩子欺负呢/` 是一本 461 万字 txt 跑完的**完整真实产物**（图片已降采样，全目录 1.4MB 以内）：
 
 | 看什么 | 打开 |
 |---|---|
-| 主交付物长什么样：标题 + 封面 + 书况 + 8 维评分 + 简介 + 雷点郁闷点概况 + 男主 + 11 位女主逐条（含各自雷点明细）+ 分维度点评 | `examples/都市良人行/都市良人行_书评.md` |
-| 备查卡片的字段密度（身份/别名/外貌原文/纯洁度四维/雷点汇总带人名/名场面） | `examples/都市良人行/都市良人行_人物卡.md` |
-| JSON 真实字段名与层级（拼装/渲染脚本按它取值） | `examples/都市良人行/都市良人行_人物数据.json` |
-| `appearance_prompt` 到底写成什么样、以及每张图的 prompt/seed 溯源 | `examples/都市良人行/人物图/_图片索引.json` |
-| 子代理该交什么格式（角色片段 / 分块笔记） | `examples/都市良人行/中间产物样例/` |
+| 主交付物长什么样：标题 + 封面 + 书况 + 8 维评分 + 简介 + 雷点郁闷点概况 + 男主 + 9 位女主逐条（含各自雷点明细）+ 分维度点评 | `examples/我才不会被女孩子欺负呢/我才不会被女孩子欺负呢_书评.md` |
+| 备查卡片的字段密度（身份/别名/外貌原文/纯洁度四维/雷点汇总带人名/名场面） | `examples/我才不会被女孩子欺负呢/我才不会被女孩子欺负呢_人物卡.md` |
+| JSON 真实字段名与层级（拼装/渲染脚本按它取值） | `examples/我才不会被女孩子欺负呢/我才不会被女孩子欺负呢_人物数据.json` |
+| `appearance_prompt` 到底写成什么样、以及每张图的 prompt/seed 溯源；`_联系表.webp` 同时是**出图及格线** | `examples/我才不会被女孩子欺负呢/人物图/` |
+| 子代理该交什么格式（角色片段 / 分块笔记） | `examples/我才不会被女孩子欺负呢/中间产物样例/` |
 
-那次的审计结果：引文 81/81 逐字命中、12/12 角色有外貌、12/12 有名场面台词、8/8 评分齐全、行号残留 0——**当你的输出达不到这个水平，是流程漏了步骤，不是书的问题**。
+那次的审计结果：引文 75/75 逐字命中、10/10 角色有外貌、10/10 有名场面台词、8/8 评分齐全、行号残留 0——**当你的输出达不到这个水平，是流程漏了步骤，不是书的问题**。
 
 想给自己的输出也留一份展示副本：`python <skill>/scripts/make_example.py --src <输出目录> --dst examples/<书名>`（抄交付物 + 人物图降采样 + 抽一份中间产物）。
 
@@ -175,7 +175,7 @@ python <skill>/scripts/prescan.py --novel <原文.txt> --out <输出目录> [--c
    - **别频繁换全局画风**：2026-11-19 拿四张 latent 参考图试过柔光 CG / anima 细线 / tawawa 柔蓝 / polished 插画，同角色同 seed 对比下来都不如 morikura_en 稳；用户结论是「换了画风还是一般，问题在服饰发型搭配」。**单张不好看先改那个角色的 `appearance_prompt`**（一套衣服 + 一个发型、颜色写死），不要动全局 `--style` / `--artist`。
    - **画风统一与 seed（2026-11-18 实测）**：画风由「画师 tag + 公共构图/画质 tag + 同一套负向词」锚定，三者对全部角色一致；**真正导致同批图风格漂移的是 seed**——同一角色、同一 prompt，只换 seed 就能一张出九〇年代复古赛璐璐、一张出当代 anime。故 `--seed-mode` 默认 `name`：**按角色名派生固定 seed**（`name_seed()`，sha256 前 13 位），同一本书重跑出同一批图、各角色构图又互不相同；整本想重摇换 `--seed-salt N`（仍可复现）；只想随机探索用 `--seed-mode random`。`--seed-mode fixed --seed 1234` 是旧行为，会让 12 张构图趋同，慎用。索引里逐张记下真实 seed，任何一张都能单独复现。
    - **正负向词冲突会静默毁掉画风**：角色 `appearance_prompt` 里若写了 `realistic` / `photorealistic`（常见于原文写「写实」「真实感」），而它们正好在本画风的负向列表里，同一 tag 既正向又负向，出图就在两种风格间掷硬币。`build_prompt()` 现在会**自动剔除**这类 tag 并打印 `[warn]`——看到 warn 就把那句话换个说法（如「写实」→ `detailed face`），别留着让模型猜。
-   - 一键成组的自检：12 张出完后拼联系表目检（`PIL` 六列拼图），**逐张看线条粗细/上色方式/脸部比例是否同代**；有一张特立独行就 `--only <名> --seed-salt N` 单张重摇。
+   - 一键成组的自检：12 张出完后拼联系表目检（`contact_sheet.py`），**逐张看线条粗细/上色方式/脸部比例是否同代**，标准就照 `examples/我才不会被女孩子欺负呢/人物图/_联系表.webp`（9/10 张同代，可当及格线）；有一张特立独行就 `--only <名> --seed-salt N` 单张重摇。
    - 喂给模型的是 JSON 里的 `appearance_prompt`（英文 tag），脚本自动补构图/画风/画质 tag 与负向词；产物落 `<输出目录>/人物图/<rank>_<角色名>.webp`（男主 `<00>_<名>`），索引写 `人物图/_图片索引.json`（含 prompt、seed、名场面台词）。
    - `--only 曾柔,于紫彤` 只出指定角色；`--no-male` 不画男主；`--dry-run` 先看提示词不花额度；`--reindex` 断点续跑后按现有图片重建索引。
    - **一次只跑一个进程（硬约束）**：接口按账号串行，第二个进程会被全局锁挡下（退出码 3）——这不是故障，是防你两条命令并排跑把图撞丢。撞 409/429/503 会自动退避重试 `--retries`（默认 4 次，20/40/60/60 秒）；确认上一个进程已死才 `--force-lock`。
@@ -294,12 +294,26 @@ python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp --tags 1gi
 
 ### appearance_prompt 写法（出图用，实测定的规矩）
 
-它是"把外貌反推成图"的唯一输入，写歪了整张图就废。**英文 tag、逗号分隔、20-40 个**，只写原文有依据的：
+它是"把外貌反推成图"的唯一输入，写歪了整张图就废。**英文 tag、逗号分隔、20-40 个**，只写原文有依据的。
+
+**基准样例：`examples/我才不会被女孩子欺负呢/`**——《我才》那批 10 张里 9 张同代（线条/上色/取景/背景灰度一致），是目前最整齐的一批，往后写不出手感就去读它的 `人物图/_图片索引.json`，出完图拿 `_联系表.webp` 对一眼。骨架就六段，顺序别乱（越靠前权重越高）：
+
+```
+1girl, solo,
+{发色+长度+质感+刘海},             ← jet black hair, long straight hair, center part
+{眼睛：大小+瞳色+神态},             ← large dark eyes, watery eyes
+{肤/脸/唇/腮红},                   ← fair skin, oval face, small lips, light blush
+{服装：主件+袖+领+细节，只一套},     ← cherry red ribbon blouse, ribbon bow at collar
+{表情+姿态，只一个}                 ← head tilt, bright smile / cold expression, faint frown
+```
+
+同一本书里**表情要错开**：十张全「微笑看镜头」就成了证件照，舒莎 `stern gaze`、庄妮 `cold expression`、宫彩彩 `bashful expression, blushing`、苏巧 `timid expression, downcast eyes` 才是人。
 
 | 该写 | 不该写 |
 |---|---|
 | `long jet black hair, hair down, big brown eyes, fair skin, red lips` | 「气质清冷」「像一朵白莲」这类画不出来的词 |
 | `pink striped short sleeve shirt, black tuxedo, white bow tie`（**只挑一套**） | 把她在全书穿过的衣服全列上（模型会串成一身怪衣服） |
+| 纯色与材质：`denim vest, cotton fabric, white chiffon blouse` | 衣物印花/字母：`number 3 print on shirt` / `logo` / `graphic tee`（模型认真去画图案和字，顺手把上色拉粗，还爱画假字母） |
 | `petite, slim` / `tall, curvy`（**腰部以上的体态**） | `long legs, high heels, jeans, ankle boots`（必被拉成全身照） |
 | 一个表情：`cold expression` / `energetic smile` | 同时写 `cold` + `smile` + `blush`，互相打架 |
 | 发色用明确词：`jet black hair` / `dark brown hair` | 只写 `black hair`，出来常带绿/蓝挑染 |

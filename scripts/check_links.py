@@ -2,14 +2,15 @@
 """
 novel-scan: check_links.py —— 检查仓库内 Markdown 的相对链接/图片是否指得实
 
-为什么要这个：`examples/README.md` 放错了一层（写在 `examples/` 根下，却按 `examples/都市良人行/`
-的视角写 `人物图/01_曾倩.webp`），GitHub 上点开就是 404，本地渲染却看不出来。
+为什么要这个：`examples/README.md` 放错了一层（写在 `examples/` 根下，却按 `examples/<书名>/`
+的视角写 `人物图/01_某某.webp`），GitHub 上点开就是 404，本地渲染却看不出来。
 每次加示例、挪目录、改图片文件名跑一遍，比人工点强。
 
 只管相对链接：
   - `http(s)://`、`mailto:`、`#锚点`、`/绝对路径` 一律跳过（外链不联网校验）
   - `%E4%BA%BA` 这类 percent-encoded 路径先解码再判存在
   - `path#锚点` 只校 path；目录链接也认（示例目录常用）
+  - fenced code block 与行内代码里的 `![](人物图/xx.webp)` 只是讲解语法，不算链接
 
 用法：
   python scripts/check_links.py                  # 检查仓库根（默认当前目录）
@@ -26,6 +27,14 @@ SKIP_DIRS = {".git", "__pycache__", "node_modules", ".workbuddy",
              "novel-scan-results", "_prescan", "scan_notes"}
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 EXTERNAL = ("http://", "https://", "mailto:", "tel:", "#", "//")
+FENCE_RE = re.compile(r"```.*?```", re.S)
+INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
+
+
+def strip_code(text):
+    """去掉代码块与行内代码：SKILL.md 里要讲「md 里的 ![](人物图/xx.webp) 会被内嵌」，
+    那只是语法示例，不是真链接，不能算缺失。"""
+    return INLINE_CODE_RE.sub("", FENCE_RE.sub("", text))
 
 
 def md_files(root):
@@ -38,7 +47,7 @@ def md_files(root):
 
 def check(path, root):
     base = os.path.dirname(path)
-    text = open(path, encoding="utf-8").read()
+    text = strip_code(open(path, encoding="utf-8").read())
     missing, total = [], 0
     for raw in LINK_RE.findall(text):
         if raw.startswith(EXTERNAL):

@@ -1,0 +1,88 @@
+{
+ "book": "我才不会被女孩子欺负呢",
+ "style": "anime",
+ "artist": "morikura_en",
+ "resolution": "portrait",
+ "items": [
+  {
+   "name": "叶麟",
+   "file": "00_叶麟.webp",
+   "seed": 20993400881646,
+   "artwork_id": "9f827c42-38db-48af-9565-7334873c042b",
+   "prompt": "morikura_en, 1boy, solo, upper body, looking at viewer, arms at sides, standing, detailed face, handsome, jet black hair, short messy hair, single stray lock on forehead, narrow eyes, small dark brown pupils, sharp gaze, pale skin, angular jaw, thick eyebrows, white short-sleeved school shirt, open collar, loosened black tie, dark school jacket, slightly furrowed brows, thin lips, high nose bridge, clean-shaven, teenage boy, head slightly lowered, grim expression, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "哼，就算我喜欢班长，又跟你有什么关系啊？"
+  },
+  {
+   "name": "舒莎",
+   "file": "01_舒莎.webp",
+   "seed": 617195141620670,
+   "artwork_id": "e9204b04-bde2-4aef-9bb2-503f13fc66ab",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, jet black hair, long straight hair, waist-length hair, center part, black eyes, large eyes, fair skin, pale complexion, oval face, thin eyebrows, slightly furrowed brows, straight nose, light pink lips, closed mouth, serious expression, stern gaze, white shirt, collared shirt, buttoned collar, long sleeves, crisp blouse, neat hair, small ears, no earrings, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "就算不把身体交给你，我的心也没有空间再留给别人了！"
+  },
+  {
+   "name": "任小芹",
+   "file": "02_任小芹.webp",
+   "seed": 3495281025844012,
+   "artwork_id": "87c5546a-f409-4334-a0c4-8860dec6c18a",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, short black hair, boyish short hair, long bangs, bangs covering one eye, large dark eyes, watery eyes, fair skin, small face, delicate facial features, small lips, light blush, cherry red ribbon blouse, short puff sleeves, ribbon bow at collar, round neckline, shoulder bag strap, head tilt, bright smile, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "我是有病啊！所以才想让叶麟同学做我的男朋友的……啊，说出来了，好害羞！"
+  },
+  {
+   "name": "艾米",
+   "file": "03_艾米.webp",
+   "seed": 3530055797942836,
+   "artwork_id": "29db706f-2c2c-4b01-b1b4-24687d613c35",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, child, blonde hair, long hair, twin tails, red hair ribbons, blue eyes, very large eyes, fair skin, porcelain skin, delicate facial features, mixed-race features, small face, lace-trimmed blouse, white blouse, denim vest, puffed short sleeves, ribbon collar, small bow, pouting expression, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "艾蜜儿是艺名，只有家里人才叫我艾米呢！"
+  },
+  {
+   "name": "宫彩彩",
+   "file": "04_宫彩彩.webp",
+   "seed": 477830157401831,
+   "artwork_id": "aad34d26-3994-4a16-bb76-283303f2de3f",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, dark hair, slightly wavy hair, natural curls, shoulder-length hair, left side hairpin, seashell hair clip, large eyes, dark pupils, fair skin, soft round face, small nose, thin round-framed glasses, white chiffon blouse, round collar, eyelet floral embroidery, short sleeves, bashful expression, blushing, looking down, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "对、对不起！我不是讨厌叶麟同学！我是害怕被小芹同学看见咱们拉手！"
+  },
+  {
+   "name": "庄妮",
+   "file": "05_庄妮.webp",
+   "seed": 3837550348498967,
+   "artwork_id": "e503c05b-3fbb-4aa1-9948-53eabd0450cc",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, jet black hair, long hair past shoulders, side-swept bangs, one eye covered by hair, pale skin, sickly complexion, light grey eyes, heavy dark circles under eyes, thin arched eyebrows, narrow face, pointed chin, black short-sleeved long dress, dark collar, no jewelry, cold expression, faint frown, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "舒莎，我喜欢的人是你。"
+  },
+  {
+   "name": "熊瑶月",
+   "file": "06_熊瑶月.webp",
+   "seed": 3135909289825690,
+   "artwork_id": "0c77693b-01f1-4520-9a0c-d53499b18eec",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, short choppy jet black hair, wild spiky short hair, exposed forehead, wheat-colored tan skin, sun-kissed skin, smooth skin, oval face, black eyes, two small fangs, canine tooth showing, band-aid on cheek, wide grin, energetic smile, white short-sleeve t-shirt, crew neck, number 3 print on shirt, small crown motif, rolled-up sleeves, cotton fabric, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "谁是熊姐！不是说了叫我月月就行吗！"
+  },
+  {
+   "name": "苏巧",
+   "file": "07_苏巧.webp",
+   "seed": 1160038394929629,
+   "artwork_id": "2efb157a-5b97-4b5e-a404-09258c167fc7",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, jet black hair, single long braid, braid over shoulder, braid to waist, neat hair parting, plain hair band, dark brown eyes, fair skin, pale complexion, thin oval face, narrow chin, thin eyebrows, tear mole under left eye, bare face, light purple vest, white dress shirt, small bow tie, buttoned collar, slight blush, timid expression, downcast eyes, pressed lips, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "我没有做嫁入豪门的美梦，像你这样的条件，无论如何也不会看上我的"
+  },
+  {
+   "name": "何菱",
+   "file": "08_何菱.webp",
+   "seed": 1870345090245345,
+   "artwork_id": "acaaa986-1b61-42e9-9641-8d0fdd35344b",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, East Asian teenage girl, dark hair, twin braids, braided hair, medium length hair, light freckles, freckles on nose bridge, brown eyes, fair skin, oval face, soft cheeks, pink lips, natural makeup, coffee-brown blazer, white shirt underneath, white-trimmed collar, buttoned front, school uniform, slight smile, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "那个……对不起，能让我先试试吗？"
+  },
+  {
+   "name": "小茵",
+   "file": "09_小茵.webp",
+   "seed": 3038044996704697,
+   "artwork_id": "eb33546c-2823-4993-8025-a1f194bc8c07",
+   "prompt": "morikura_en, 1girl, solo, upper body, looking at viewer, arms at sides, standing, detailed face, beautiful detailed eyes, loli, silver hair, long hair, straight hair, silver bangs, golden eyes, glowing eyes, fair skin, porcelain skin, small nose, pale pink lips, long eyelashes, delicate face, silver blazer, white shirt, turned-up collar, silver necktie, playful smile, portrait, simple background, gradient background, anime screencap, official art, masterpiece, best quality, highly detailed, soft lighting",
+   "signature_line": "不是说过让你叫我‘小茵’吗？每次都忘记我的名字"
+  }
+ ]
+}

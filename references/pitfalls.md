@@ -98,8 +98,8 @@
 - 审计 2f 兜底：汇总条目漏 `name` / 代词开头、书评缺概况段或位置不对、某个角色的明细没落在自己条目里，都会点名。
 
 ## 示例 README 放错层级 → GitHub 上图片全 404（2026-11-18）
-- 把导读写成 `examples/README.md`，内容却按 `examples/都市良人行/` 的视角引用 `人物图/01_曾倩.webp`，GitHub 解析成 `examples/人物图/01_曾倩.webp`——本地 IDE 预览正常（有些渲染器会猜），线上点开就是 404。
-- 规矩：**导读跟在产物同一目录**（`examples/<书名>/README.md`），相对路径才有意义；`examples/README.md` 只做索引，链接写 `都市良人行/README.md`。
+- 把导读写成 `examples/README.md`，内容却按 `examples/<书名>/` 的视角去引用「`人物图/` 下的第 1 张」，GitHub 解析成 `examples/人物图/…`——本地 IDE 预览正常（有些渲染器会猜），线上点开就是 404。
+- 规矩：**导读跟在产物同一目录**（`examples/<书名>/README.md`），相对路径才有意义；`examples/README.md` 只做索引，链接写 `<书名>/README.md`。
 - 兜底：`python scripts/check_links.py --root .`，把所有 md 的相对链接按各自目录解析一遍，缺失即以非零退出。
 
 ## 重出图之后必须重渲染文档
@@ -225,6 +225,8 @@
 - 现象：《我才不会被女孩子欺负呢》熊瑶月（短碎发+小麦肤色+创可贴+印数字3的白T恤）不管怎么摇 seed，出来的都是少年热血漫，和其余 9 张 morikura_en 萌系不是同一代。
 - 试过两条路都不行：①`--seed-salt 1` 重摇 → 更热血漫，还多出「KM'SO」这种假字母水印；②把 `wild spiky short hair` / `number 3 print` / `two small fangs` 换柔（`tousled short hair` / 光板白T）→ 仍然少年漫（吉卜力味），且已经偏离原文外貌。
 - 结论：**某些 tag 组合本身就在另一套分布里**，`morikura_en` 这个画师 tag 拉不回来。这时硬改 prompt 等于拿事实换画风，不可取——恢复原文 prompt + 原 seed，保留这张，在交付说明里如实标注「该角色外形 tag 触发少年漫分布，画风与同批不统一」。**先改 prompt 只在「一套衣服一个发型」这种自由度内有效，改到要动原文事实就该停手**。
+- 现在 `gen_portraits.py` 对 `number N print` / `logo` / `graphic tee` / `motif` 这类**衣物印花 tag 打 `[warn]`**（只告警不删，印花是原文事实）；看到 warn 心里有数：这张大概率会粗一档。
+- 这一批同时被定成**出图基准**：`examples/我才不会被女孩子欺负呢/`，9/10 张同代，`人物图/_联系表.webp` 可直接当及格线对；prompt 骨架与反例都在那份 README 里。
 
 ## 封面别用 `1girl solo portrait` 这种泛 tag 抽（2026-11-20，反叛的大魔王）
 - `pick_cover.py` 走公开图库 `resolve`，按 tag 检索 + 排位随机。用默认泛标签抽了两本，一本抽到秋日湖边少女（好），另一本抽到**戴战术头盔防毒面具的军人**——标的还是 1girl/solo，实际内容跟"都市异能后宫"完全无关，做封面很违和。
