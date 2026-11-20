@@ -648,6 +648,21 @@ def main():
             while len(pages[i]) > 1 and final[pages[i][-1]].kind == "h":
                 pages[i + 1].insert(0, pages[i].pop())
 
+        # 矮页回填：孤行标题被挪进下一页后，上一页可能只剩很少内容；把下一页首块
+        # 挪回来补满（跳过标题块，免得又造出孤行标题）。注意它治不了"块本身不可分、
+        # 差几十像素装不下"的矮页——那种是物理限制，别硬塞。
+        for i in range(len(pages) - 1):
+            while len(pages[i + 1]) > 1:
+                page_h = spans[pages[i][-1]][1] - spans[pages[i][0]][0]
+                if page_h >= MAXH * 0.45:
+                    break
+                j = pages[i + 1][0]
+                if final[j].kind == "h":
+                    break
+                if page_h + (spans[j][1] - spans[j][0]) > MAXH * 0.97:
+                    break
+                pages[i].append(pages[i + 1].pop(0))
+
         # 兜底：上面两步都会在装箱之后再挪块，可能把某页顶过 MAXH（实测人物卡有一次
         # 到 3951px，出图 5927px，破了贴吧 5680 上限）。这里按块高重新切，直到全部合规。
         changed = True

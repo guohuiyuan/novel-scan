@@ -278,7 +278,8 @@ python <skill>/scripts/pick_cover.py --out <输出目录>/封面.webp --tags 1gi
 - 默认标签 `1girl solo portrait`（池子 1000 张，偏向胸像/半身）。标签越多池子越小：`1girl+solo+city` 只剩 18 张、`scenery` 20 张；脚本会自动二分出可用张数，标签组合挑空时逐级放宽，最后兜底 `1girl`。
 - 产物旁写 `_封面.json` 留痕（artwork id / 排位 / 标签 / 模型 / 尺寸 / 作品页 URL），方便回溯与换图。
 - **必须目检**：机器只保证 SFW，不保证像样。挑出来是抽象图案、裁切怪异、带文字水印的，换 `--seed` 或加 `--rank` 重挑。实测 3 张里约 2 张可用，别直接交付没看过的图。
-- 一次想挑：连跑 3 个 `--seed` 出到临时目录，拼联系表看一眼再定（`PIL` 即可）。
+- **别只用泛标签**：`1girl solo portrait` 抽到过「戴战术头盔防毒面具的军人」当都市后宫封面（那张图自己就挂着 1girl/solo）。带一个定调词再抽——`1girl solo smile`、`1girl solo upper body black hair`，一次抽 3-4 组不同 `--seed`。
+- 一次挑：全部出到临时目录，拼联系表看一眼再定；定稿转 `webp q88`（原图常是 2-3MB PNG，长图会把它内嵌成 data URI，撑大第 1 页），并同步更新 `_封面.json` 的 `file`/`bytes`。
 - 封面**不是**人物图：人物图按 `appearance_prompt` 生成、走 `gen_portraits.py`（有角色对应关系、要 key、要排队）；封面只是从图库借一张气氛图。
 - 渲染器会在 `--out` 同目录自动找 `封面.*` / `cover.*` 并插在标题下方，找不到就不插图（打印提示）。换封面后**重跑渲染**，md 只记文件名。
 
